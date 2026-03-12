@@ -13,7 +13,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = readBody<LoginBody>(req);
-    const email = body.email?.trim();
+    const email = body.email?.trim().toLowerCase();
     const password = body.password;
 
     if (!email || !password) {
