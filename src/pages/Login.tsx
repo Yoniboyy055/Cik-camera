@@ -36,11 +36,11 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
 
-      if (!res.ok) {
-        throw new Error('Invalid credentials');
-      }
-
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid credentials');
+      }
       login(data.user);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Sign in failed');
