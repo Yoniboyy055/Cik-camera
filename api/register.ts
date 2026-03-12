@@ -46,7 +46,6 @@ export default async function handler(req: any, res: any) {
       email,
       password,
       role: 'worker',
-      created_at: new Date().toISOString(),
     });
 
     if (insertError) {

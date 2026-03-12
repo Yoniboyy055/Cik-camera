@@ -48,6 +48,7 @@ This app is now structured for Vercel deployment:
 ## API Routes (Serverless)
 
 - `POST /api/login`
+- `POST /api/register`
 - `GET /api/projects`
 - `GET /api/task-templates`
 - `GET /api/task-templates/:id/requirements`

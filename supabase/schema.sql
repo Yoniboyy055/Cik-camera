@@ -3,7 +3,8 @@ create table if not exists users (
   name text,
   email text unique,
   role text,
-  password text
+  password text,
+  created_at timestamptz default now()
 );
 
 create table if not exists projects (
