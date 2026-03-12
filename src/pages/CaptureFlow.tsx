@@ -130,7 +130,7 @@ export default function CaptureFlow() {
     } catch (err) {
       console.error(err);
       // Fallback: local package ID → Quick Capture so the worker is never blocked
-      setPackageId(`local-${Date.now()}`);
+      setPackageId(`local-${crypto.randomUUID()}`);
       setIsQuickCapture(true);
       setRequirements(quickCaptureReq);
       setCurrentRequirementId('quick-capture');

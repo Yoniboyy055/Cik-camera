@@ -1,5 +1,5 @@
 import { methodNotAllowed, readBody, serverError } from '../../_lib/http';
-import { supabaseAdmin } from '../../_lib/supabaseAdmin';
+import { getSupabaseAdmin } from '../../_lib/supabaseAdmin';
 
 interface StatusBody {
   status?: string;
@@ -18,6 +18,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const supabase = getSupabaseAdmin();
     const body = readBody<StatusBody>(req);
     const status = body.status;
 
@@ -25,7 +26,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'status is required' });
     }
 
-    const { error: packageError } = await supabaseAdmin
+    const { error: packageError } = await supabase
       .from('capture_packages')
       .update({ status })
       .eq('id', packageId);
@@ -34,7 +35,7 @@ export default async function handler(req: any, res: any) {
       return serverError(res, packageError);
     }
 
-    const { error: capturesError } = await supabaseAdmin
+    const { error: capturesError } = await supabase
       .from('captures')
       .update({ status })
       .eq('package_id', packageId);

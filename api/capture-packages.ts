@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { supabaseAdmin } from './_lib/supabaseAdmin';
+import { getSupabaseAdmin } from './_lib/supabaseAdmin';
 
 interface CreatePackageBody {
   user_id?: string;
@@ -14,6 +14,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const supabase = getSupabaseAdmin();
     const body = readBody<CreatePackageBody>(req);
 
     if (!body.user_id || !body.project_id) {
@@ -22,7 +23,7 @@ export default async function handler(req: any, res: any) {
 
     const id = randomUUID();
 
-    const { error } = await supabaseAdmin.from('capture_packages').insert({
+    const { error } = await supabase.from('capture_packages').insert({
       id,
       user_id: body.user_id,
       project_id: body.project_id,

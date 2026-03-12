@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { storageBucket, supabaseAdmin } from './_lib/supabaseAdmin';
+import { getSupabaseAdmin, storageBucket } from './_lib/supabaseAdmin';
 
 interface CreateCaptureBody {
   user_id?: string;
@@ -22,11 +22,12 @@ function decodeBase64Image(input: string): Buffer {
 }
 
 async function uploadPhoto(packageId: string | undefined, captureId: string, photoData: string) {
+  const supabase = getSupabaseAdmin();
   const imageBuffer = decodeBase64Image(photoData);
   const pathPrefix = packageId || 'unpackaged';
   const objectPath = `${pathPrefix}/${captureId}.jpg`;
 
-  const { error } = await supabaseAdmin.storage
+  const { error } = await supabase.storage
     .from(storageBucket)
     .upload(objectPath, imageBuffer, {
       contentType: 'image/jpeg',
@@ -37,12 +38,14 @@ async function uploadPhoto(packageId: string | undefined, captureId: string, pho
     throw error;
   }
 
-  const { data } = supabaseAdmin.storage.from(storageBucket).getPublicUrl(objectPath);
+  const { data } = supabase.storage.from(storageBucket).getPublicUrl(objectPath);
   return data.publicUrl;
 }
 
 async function fetchCaptureRows() {
-  const { data: captures, error } = await supabaseAdmin
+  const supabase = getSupabaseAdmin();
+
+  const { data: captures, error } = await supabase
     .from('captures')
     .select('*')
     .order('created_at', { ascending: false });
@@ -59,16 +62,16 @@ async function fetchCaptureRows() {
 
   const [usersRes, projectsRes, requirementsRes, packagesRes] = await Promise.all([
     userIds.length
-      ? supabaseAdmin.from('users').select('id, name').in('id', userIds)
+      ? supabase.from('users').select('id, name').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
     projectIds.length
-      ? supabaseAdmin.from('projects').select('id, name').in('id', projectIds)
+      ? supabase.from('projects').select('id, name').in('id', projectIds)
       : Promise.resolve({ data: [], error: null }),
     requirementIds.length
-      ? supabaseAdmin.from('task_template_requirements').select('id, label').in('id', requirementIds)
+      ? supabase.from('task_template_requirements').select('id, label').in('id', requirementIds)
       : Promise.resolve({ data: [], error: null }),
     packageIds.length
-      ? supabaseAdmin.from('capture_packages').select('id, task_template_id').in('id', packageIds)
+      ? supabase.from('capture_packages').select('id, task_template_id').in('id', packageIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -87,7 +90,7 @@ async function fetchCaptureRows() {
 
   const templateIds = [...new Set((packagesRes.data || []).map((row) => row.task_template_id).filter(Boolean))];
   const templatesRes = templateIds.length
-    ? await supabaseAdmin.from('task_templates').select('id, name').in('id', templateIds)
+    ? await supabase.from('task_templates').select('id, name').in('id', templateIds)
     : { data: [], error: null };
 
   if (templatesRes.error) {
@@ -124,6 +127,7 @@ export default async function handler(req: any, res: any) {
 
   if (req.method === 'POST') {
     try {
+      const supabase = getSupabaseAdmin();
       const body = readBody<CreateCaptureBody>(req);
 
       if (!body.user_id || !body.project_id || !body.package_id) {
@@ -141,7 +145,7 @@ export default async function handler(req: any, res: any) {
         photoUrl = await uploadPhoto(body.package_id, id, body.photo_data);
       }
 
-      const { error } = await supabaseAdmin.from('captures').insert({
+      const { error } = await supabase.from('captures').insert({
         id,
         package_id: body.package_id,
         requirement_id: normalizedRequirementId,
