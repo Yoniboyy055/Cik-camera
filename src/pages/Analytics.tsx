@@ -26,9 +26,9 @@ export default function Analytics() {
 
   useEffect(() => {
     fetch('/api/captures')
-      .then((res) => res.json())
-      .then((data: Capture[]) => {
-        setCaptures(data);
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => {
+        setCaptures(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(() => {

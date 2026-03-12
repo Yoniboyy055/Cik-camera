@@ -53,8 +53,14 @@ export default function CaptureFlow() {
   const handleCaptureRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    fetch('/api/projects').then(res => res.json()).then(setProjects);
-    fetch('/api/task-templates').then(res => res.json()).then(setTemplates);
+    fetch('/api/projects')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setProjects(Array.isArray(data) ? data : []))
+      .catch(() => setProjects([]));
+    fetch('/api/task-templates')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setTemplates(Array.isArray(data) ? data : []))
+      .catch(() => setTemplates([]));
     
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
