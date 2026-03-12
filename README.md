@@ -35,3 +35,64 @@ From now on, use feature branches and pull requests for all changes.
 4. Merge only after review and checks pass.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+
+## Vercel + Supabase Architecture
+
+This app is now structured for Vercel deployment:
+
+1. Frontend: React + Vite static build from `dist`.
+2. Backend: Vercel serverless API routes in `api`.
+3. Database: Supabase Postgres.
+4. Image storage: Supabase Storage bucket (default: `captures`).
+
+## API Routes (Serverless)
+
+- `POST /api/login`
+- `GET /api/projects`
+- `GET /api/task-templates`
+- `GET /api/task-templates/:id/requirements`
+- `POST /api/capture-packages`
+- `GET /api/captures`
+- `POST /api/captures`
+- `PATCH /api/captures/:id/status`
+- `PATCH /api/packages/:id/status`
+
+## Supabase Setup
+
+1. Create a Supabase project.
+2. Run SQL from `supabase/schema.sql` in the SQL editor.
+3. Create a public storage bucket named `captures` (or set `SUPABASE_STORAGE_BUCKET`).
+
+## Environment Variables
+
+Set these in Vercel Project Settings:
+
+- `GEMINI_API_KEY`
+- `VITE_MAPBOX_TOKEN`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET` (optional, defaults to `captures`)
+
+## Local Development
+
+For frontend only:
+
+- `npm run dev`
+
+For full Vercel-like frontend + API:
+
+- `npm run dev:vercel`
+
+## Deployment Checklist
+
+1. Confirm `supabase/schema.sql` has been executed.
+2. Confirm storage bucket exists and is public.
+3. Add all required environment variables in Vercel.
+4. Run `npm run build` successfully.
+5. Deploy to Vercel and verify:
+   - worker login
+   - project/template loading
+   - capture package creation
+   - capture upload to storage
+   - supervisor review/status updates
+   - report generation

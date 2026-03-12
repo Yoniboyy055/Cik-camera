@@ -361,11 +361,10 @@ export default function CaptureFlow() {
         });
         
         const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
+        const compressedBase64 = await new Promise<string>((resolve) => {
           reader.onloadend = () => resolve(reader.result as string);
           reader.readAsDataURL(compressedFile);
         });
-        const compressedBase64 = await base64Promise;
 
         return fetch('/api/captures', {
           method: 'POST',
@@ -374,7 +373,7 @@ export default function CaptureFlow() {
             user_id: user?.id,
             project_id: projectId,
             package_id: packageId,
-            requirement_id: reqId,
+            requirement_id: reqId === 'quick-capture' ? null : reqId,
             note: photo.note,
             measurement: photo.measurement,
             unit: photo.unit,
@@ -389,7 +388,7 @@ export default function CaptureFlow() {
       await Promise.all(uploadPromises);
       
       // Update package status
-      await fetch(`/api/captures/${packageId}/status`, {
+      await fetch(`/api/packages/${packageId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'completed' }),
