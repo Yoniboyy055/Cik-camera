@@ -22,6 +22,7 @@ export default function Analytics() {
   const navigate = useNavigate();
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetch('/api/captures')
@@ -30,7 +31,10 @@ export default function Analytics() {
         setCaptures(data);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
   }, []);
 
   // Derive stats
@@ -56,15 +60,19 @@ export default function Analytics() {
     { name: 'Pending', value: pending },
   ].filter((d) => d.value > 0);
 
-  // Captures over last 7 days
+  // Captures over last 7 days (single-pass aggregation)
   const now = new Date();
+  const capturesByDate = captures.reduce<Record<string, number>>((acc, c) => {
+    const d = c.created_at?.slice(0, 10);
+    if (d) acc[d] = (acc[d] || 0) + 1;
+    return acc;
+  }, {});
   const dailyData = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(now);
     date.setDate(date.getDate() - (6 - i));
     const dateStr = date.toISOString().slice(0, 10);
     const label = date.toLocaleDateString('en-US', { weekday: 'short' });
-    const count = captures.filter((c) => c.created_at?.slice(0, 10) === dateStr).length;
-    return { day: label, count };
+    return { day: label, count: capturesByDate[dateStr] || 0 };
   });
 
   return (
@@ -85,6 +93,11 @@ export default function Analytics() {
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-28 bg-brand-surface rounded-xl border border-brand-border animate-pulse" />
             ))}
+          </div>
+        ) : error ? (
+          <div className="text-center py-20">
+            <p className="text-brand-danger font-medium">Failed to load analytics data.</p>
+            <p className="text-brand-text-muted text-sm mt-1">Please try again later.</p>
           </div>
         ) : (
           <>
