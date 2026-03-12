@@ -20,10 +20,13 @@ export default async function handler(req: any, res: any) {
     const password = body.password;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email, and password are required' });
+      return res.status(400).json({ error: 'Name, email and password are required' });
     }
 
-    // Check if email already exists
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
     const { data: existing, error: lookupError } = await supabaseAdmin
       .from('users')
       .select('id')
@@ -46,6 +49,7 @@ export default async function handler(req: any, res: any) {
       email,
       password,
       role: 'worker',
+      created_at: new Date().toISOString(),
     });
 
     if (insertError) {
@@ -54,6 +58,6 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({ user: { id, name, email, role: 'worker' } });
   } catch (error) {
-    return res.status(500).json({ error: 'Registration failed' });
+    return serverError(res, error);
   }
 }
