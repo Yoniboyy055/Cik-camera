@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { LogOut, Search, Filter, MapPin, Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, Copy, FileOutput, Navigation } from 'lucide-react';
+import { LogOut, Search, Filter, MapPin, Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, Copy, FileOutput, Navigation, Settings, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import Map3D from '../components/Map3D';
 import jsPDF from 'jspdf';
@@ -9,6 +10,7 @@ import { toast } from 'sonner';
 export default function SupervisorDashboard() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const navigate = useNavigate();
   const [captures, setCaptures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCapture, setSelectedCapture] = useState<any | null>(null);
@@ -157,6 +159,20 @@ export default function SupervisorDashboard() {
             >
               <FileOutput className="w-4 h-4" />
               Generate Daily Report
+            </button>
+            <button
+              onClick={() => navigate('/analytics')}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-brand-text-muted hover:bg-brand-border/50 rounded-lg font-medium text-sm transition-colors"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Site Intelligence
+            </button>
+            <button
+              onClick={() => navigate('/settings')}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-brand-text-muted hover:bg-brand-border/50 rounded-lg font-medium text-sm transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
             </button>
           </div>
         </div>
