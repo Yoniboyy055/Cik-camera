@@ -24,3 +24,14 @@ View your app in AI Studio: https://ai.studio/apps/9bbd6019-bf47-4aae-b7db-d8291
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Git Workflow
+
+From now on, use feature branches and pull requests for all changes.
+
+1. Create a branch from `main`.
+2. Make small, focused commits.
+3. Open a PR back to `main`.
+4. Merge only after review and checks pass.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
