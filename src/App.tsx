@@ -4,6 +4,8 @@ import { useAuthStore } from './store/auth';
 import WorkerHome from './pages/WorkerHome';
 import CaptureFlow from './pages/CaptureFlow';
 import SupervisorDashboard from './pages/SupervisorDashboard';
+import Settings from './pages/Settings';
+import Analytics from './pages/Analytics';
 import Chatbot from './components/Chatbot';
 import { Toaster } from 'sonner';
 
@@ -51,6 +53,24 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['worker']}>
                 <CaptureFlow />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
               </ProtectedRoute>
             }
           />
