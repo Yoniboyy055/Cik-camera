@@ -1,0 +1,9 @@
+{
+  "name": "CIK Proof Capture",
+  "description": "A company-only mobile app for field workers to capture clear jobsite proof photos with visible tape-measure evidence, GPS/location, time/date, project/task metadata, and automatic upload to a company dashboard.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation",
+    "microphone"
+  ]
+}
