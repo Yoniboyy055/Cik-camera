@@ -6,10 +6,7 @@ const REQUEST_TIMEOUT_MS = 8000;
 function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const signal = init?.signal
-    ? (AbortSignal as any).any([init.signal, controller.signal])
-    : controller.signal;
-  return fetch(input, { ...init, signal }).finally(() => clearTimeout(timer));
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 let _client: SupabaseClient | null = null;
