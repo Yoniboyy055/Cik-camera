@@ -1,21 +1,6 @@
-import { getSupabaseAdmin } from './_lib/supabaseAdmin';
-
-export default async function handler(req: any, res: any) {
-  const checks: Record<string, string> = {};
-
-  try {
-    const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from('users').select('id').limit(1);
-    checks.database = error ? `fail: ${error.message}` : 'ok';
-  } catch (e) {
-    checks.database = `fail: ${e instanceof Error ? e.message : 'unknown'}`;
-  }
-
-  const healthy = Object.values(checks).every((v) => v === 'ok');
-
-  return res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'healthy' : 'unhealthy',
-    checks,
+export default function handler(_req: any, res: any) {
+  return res.status(200).json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
   });
 }

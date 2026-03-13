@@ -19,5 +19,6 @@ export function getSupabaseAdmin(): SupabaseClient {
   return _client;
 }
 
-export const storageBucket =
-  process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'captures';
+export function getStorageBucket(): string {
+  return process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'captures';
+}

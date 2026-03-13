@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { getSupabaseAdmin, storageBucket } from './_lib/supabaseAdmin';
+import { getSupabaseAdmin, getStorageBucket } from './_lib/supabaseAdmin';
 
 interface CreateCaptureBody {
   user_id?: string;
@@ -34,7 +34,7 @@ async function uploadPhoto(packageId: string | undefined, captureId: string, pho
   const objectPath = `${pathPrefix}/${captureId}.jpg`;
 
   const { error } = await supabase.storage
-    .from(storageBucket)
+    .from(getStorageBucket())
     .upload(objectPath, imageBuffer, {
       contentType: 'image/jpeg',
       upsert: false,
@@ -44,7 +44,7 @@ async function uploadPhoto(packageId: string | undefined, captureId: string, pho
     throw error;
   }
 
-  const { data } = supabase.storage.from(storageBucket).getPublicUrl(objectPath);
+  const { data } = supabase.storage.from(getStorageBucket()).getPublicUrl(objectPath);
   return data.publicUrl;
 }
 
