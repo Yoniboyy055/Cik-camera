@@ -1,14 +1,23 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireEnv } from './env';
 
-const supabaseUrl = requireEnv('SUPABASE_URL');
-const supabaseServiceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+let _client: SupabaseClient | null = null;
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
+export function getSupabaseAdmin(): SupabaseClient {
+  if (_client) return _client;
 
-export const storageBucket = process.env.SUPABASE_STORAGE_BUCKET || 'captures';
+  const supabaseUrl = requireEnv('SUPABASE_URL');
+  const supabaseKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+
+  _client = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  return _client;
+}
+
+export const storageBucket =
+  process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'captures';

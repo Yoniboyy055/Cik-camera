@@ -1,5 +1,5 @@
 import { methodNotAllowed, serverError } from './_lib/http';
-import { supabaseAdmin } from './_lib/supabaseAdmin';
+import { getSupabaseAdmin } from './_lib/supabaseAdmin';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -7,7 +7,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
       .from('projects')
       .select('*')
       .order('name', { ascending: true });

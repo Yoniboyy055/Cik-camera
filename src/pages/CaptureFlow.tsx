@@ -29,6 +29,10 @@ export default function CaptureFlow() {
   const [projectId, setProjectId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [packageId, setPackageId] = useState('');
+  const [useManualProject, setUseManualProject] = useState(false);
+  const [useManualTemplate, setUseManualTemplate] = useState(false);
+  const [manualProjectName, setManualProjectName] = useState('');
+  const [manualTemplateName, setManualTemplateName] = useState('');
   const [currentRequirementId, setCurrentRequirementId] = useState('');
   
   const [capturedPhotos, setCapturedPhotos] = useState<Record<string, { data: string; note: string; measurement: string; unit: string }>>({});
@@ -55,12 +59,20 @@ export default function CaptureFlow() {
   useEffect(() => {
     fetch('/api/projects')
       .then(res => res.ok ? res.json() : [])
-      .then(data => setProjects(Array.isArray(data) ? data : []))
-      .catch(() => setProjects([]));
+      .then(data => {
+        const list = Array.isArray(data) ? data : [];
+        setProjects(list);
+        if (list.length === 0) setUseManualProject(true);
+      })
+      .catch(() => { setProjects([]); setUseManualProject(true); });
     fetch('/api/task-templates')
       .then(res => res.ok ? res.json() : [])
-      .then(data => setTemplates(Array.isArray(data) ? data : []))
-      .catch(() => setTemplates([]));
+      .then(data => {
+        const list = Array.isArray(data) ? data : [];
+        setTemplates(list);
+        if (list.length === 0) setUseManualTemplate(true);
+      })
+      .catch(() => { setTemplates([]); setUseManualTemplate(true); });
     
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -80,28 +92,33 @@ export default function CaptureFlow() {
   }, []);
 
   const startPackage = async () => {
-    if (!projectId) return;
+    const hasProject = useManualProject ? !!manualProjectName.trim() : !!projectId;
+    const hasTemplate = isQuickCapture || (useManualTemplate ? !!manualTemplateName.trim() : !!templateId);
+    if (!hasProject || !hasTemplate) return;
+
+    const quickCaptureReq = [{
+      id: 'quick-capture',
+      label: 'Field Proof',
+      capture_type: 'wide' as const,
+      is_required: 0
+    }];
+
     try {
       const res = await fetch('/api/capture-packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           user_id: user?.id, 
-          project_id: projectId, 
-          task_template_id: isQuickCapture ? null : templateId 
+          project_id: useManualProject ? null : projectId, 
+          task_template_id: isQuickCapture ? null : (useManualTemplate ? null : templateId)
         }),
       });
+      if (!res.ok) throw new Error('capture-packages API error');
       const { id } = await res.json();
       setPackageId(id);
       
-      if (isQuickCapture) {
-        // Create a generic requirement for quick capture
-        setRequirements([{
-          id: 'quick-capture',
-          label: 'Field Proof',
-          capture_type: 'wide',
-          is_required: 0
-        }]);
+      if (isQuickCapture || useManualTemplate) {
+        setRequirements(quickCaptureReq);
         setCurrentRequirementId('quick-capture');
         setStep('camera');
       } else {
@@ -112,6 +129,12 @@ export default function CaptureFlow() {
       }
     } catch (err) {
       console.error(err);
+      // Fallback: local package ID → Quick Capture so the worker is never blocked
+      setPackageId(`local-${crypto.randomUUID()}`);
+      setIsQuickCapture(true);
+      setRequirements(quickCaptureReq);
+      setCurrentRequirementId('quick-capture');
+      setStep('camera');
     }
   };
 
@@ -162,13 +185,17 @@ export default function CaptureFlow() {
     // Project Name
     ctx.fillStyle = 'white';
     ctx.font = 'bold 48px sans-serif';
-    const projectName = projects.find(p => p.id === projectId)?.name || 'Unknown Project';
+    const projectName = useManualProject
+      ? (manualProjectName || 'Manual Entry')
+      : (projects.find(p => p.id === projectId)?.name || 'Unknown Project');
     ctx.fillText(`Project: ${projectName}`, padding + 40, padding + 130);
 
     // Task Name
     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.font = '36px sans-serif';
-    const templateName = templates.find(t => t.id === templateId)?.name || 'Unknown Task';
+    const templateName = useManualTemplate
+      ? (manualTemplateName || 'Quick Capture')
+      : (templates.find(t => t.id === templateId)?.name || 'Unknown Task');
     const reqLabel = requirements.find(r => r.id === currentRequirementId)?.label || '';
     ctx.fillText(`${templateName}: ${reqLabel}`, padding + 40, padding + 180);
 
@@ -233,7 +260,7 @@ export default function CaptureFlow() {
     const finalImage = canvas.toDataURL('image/jpeg', 0.95);
     setPhotoData(finalImage);
     setStep('review');
-  }, [webcamRef, projectId, templateId, currentRequirementId, address, location, user, projects, templates, requirements, measurement, unit]);
+  }, [webcamRef, projectId, templateId, currentRequirementId, address, location, user, projects, templates, requirements, measurement, unit, useManualProject, useManualTemplate, manualProjectName, manualTemplateName]);
 
   const handleCapture = useCallback(async () => {
     await drawOverlayAndCapture();
@@ -446,34 +473,75 @@ export default function CaptureFlow() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Project</label>
-                <select 
-                  value={projectId} 
-                  onChange={(e) => setProjectId(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
-                >
-                  <option value="" disabled className="text-neutral-900">Select Project</option>
-                  {projects.map(p => <option key={p.id} value={p.id} className="text-neutral-900">{p.name}</option>)}
-                </select>
+                {useManualProject ? (
+                  <input
+                    type="text"
+                    value={manualProjectName}
+                    onChange={(e) => setManualProjectName(e.target.value)}
+                    placeholder="Type project name…"
+                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                ) : (
+                  <select 
+                    value={projectId} 
+                    onChange={(e) => setProjectId(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
+                  >
+                    <option value="" disabled className="text-neutral-900">Select Project</option>
+                    {projects.map(p => <option key={p.id} value={p.id} className="text-neutral-900">{p.name}</option>)}
+                  </select>
+                )}
+                {projects.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setUseManualProject(v => !v)}
+                    className="mt-1 text-xs text-emerald-400 hover:text-emerald-300 underline"
+                  >
+                    {useManualProject ? 'Use dropdown' : 'Type manually'}
+                  </button>
+                )}
               </div>
               
               {!isQuickCapture && (
                 <div>
                   <label className="block text-sm font-medium text-white/70 mb-2">Task Template</label>
-                  <select 
-                    value={templateId} 
-                    onChange={(e) => setTemplateId(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
-                  >
-                    <option value="" disabled className="text-neutral-900">Select Template</option>
-                    {templates.map(t => <option key={t.id} value={t.id} className="text-neutral-900">{t.name}</option>)}
-                  </select>
+                  {useManualTemplate ? (
+                    <input
+                      type="text"
+                      value={manualTemplateName}
+                      onChange={(e) => setManualTemplateName(e.target.value)}
+                      placeholder="Type template name…"
+                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  ) : (
+                    <select 
+                      value={templateId} 
+                      onChange={(e) => setTemplateId(e.target.value)}
+                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
+                    >
+                      <option value="" disabled className="text-neutral-900">Select Template</option>
+                      {templates.map(t => <option key={t.id} value={t.id} className="text-neutral-900">{t.name}</option>)}
+                    </select>
+                  )}
+                  {templates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setUseManualTemplate(v => !v)}
+                      className="mt-1 text-xs text-emerald-400 hover:text-emerald-300 underline"
+                    >
+                      {useManualTemplate ? 'Use dropdown' : 'Type manually'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
             <div className="space-y-3 mt-8">
               <button 
-                disabled={!projectId || (!isQuickCapture && !templateId)}
+                disabled={
+                  (useManualProject ? !manualProjectName.trim() : !projectId) ||
+                  (!isQuickCapture && (useManualTemplate ? !manualTemplateName.trim() : !templateId))
+                }
                 onClick={startPackage}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >

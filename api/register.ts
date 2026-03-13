@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { supabaseAdmin } from './_lib/supabaseAdmin';
+import { getSupabaseAdmin } from './_lib/supabaseAdmin';
 
 interface RegisterBody {
   name?: string;
@@ -14,6 +14,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const supabase = getSupabaseAdmin();
     const body = readBody<RegisterBody>(req);
     const name = body.name?.trim();
     const email = body.email?.trim().toLowerCase();
@@ -27,7 +28,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
-    const { data: existing, error: lookupError } = await supabaseAdmin
+    const { data: existing, error: lookupError } = await supabase
       .from('users')
       .select('id')
       .eq('email', email)
@@ -43,7 +44,7 @@ export default async function handler(req: any, res: any) {
 
     const id = randomUUID();
 
-    const { error: insertError } = await supabaseAdmin.from('users').insert({
+    const { error: insertError } = await supabase.from('users').insert({
       id,
       name,
       email,
