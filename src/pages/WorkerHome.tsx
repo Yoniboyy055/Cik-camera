@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { Camera, Clock, MapPin, CheckCircle, LogOut, Settings, BarChart3 } from 'lucide-react';
+import { Camera, Clock, MapPin, CheckCircle, LogOut, Settings, BarChart3, Images } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function WorkerHome() {
@@ -57,6 +57,13 @@ export default function WorkerHome() {
       <main className="p-6 max-w-md mx-auto space-y-8">
         {/* Quick Nav Links */}
         <section className="flex gap-3">
+          <button
+            onClick={() => navigate('/my-captures')}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-brand-surface border border-brand-border rounded-xl text-sm font-medium text-brand-text-muted hover:text-brand-text hover:border-brand-primary/50 transition-colors"
+          >
+            <Images className="w-4 h-4" />
+            My Captures
+          </button>
           <button
             onClick={() => navigate('/settings')}
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-brand-surface border border-brand-border rounded-xl text-sm font-medium text-brand-text-muted hover:text-brand-text hover:border-brand-primary/50 transition-colors"

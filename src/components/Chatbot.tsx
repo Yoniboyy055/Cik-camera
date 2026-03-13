@@ -3,7 +3,11 @@ import { MessageCircle, X, Send, Image as ImageIcon, Loader2, BrainCircuit } fro
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+function getAIClient() {
+  const key = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+}
 
 interface Message {
   id: string;
@@ -74,6 +78,11 @@ export default function Chatbot() {
     if (fileInputRef.current) fileInputRef.current.value = '';
 
     try {
+      const ai = getAIClient();
+      if (!ai) {
+        throw new Error('Missing VITE_GEMINI_API_KEY');
+      }
+
       const parts: any[] = [];
       
       if (currentImagePreview) {
@@ -116,7 +125,7 @@ export default function Chatbot() {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: 'Sorry, an error occurred while processing your request.',
+        text: 'Assistant is unavailable. Set VITE_GEMINI_API_KEY to enable AI responses.',
       }]);
     } finally {
       setLoading(false);

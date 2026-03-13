@@ -16,6 +16,12 @@ interface CreateCaptureBody {
   photo_data?: string;
 }
 
+function normalizeNullableText(value?: string): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 function decodeBase64Image(input: string): Buffer {
   const cleaned = input.replace(/^data:image\/\w+;base64,/, '');
   return Buffer.from(cleaned, 'base64');
@@ -130,33 +136,36 @@ export default async function handler(req: any, res: any) {
       const supabase = getSupabaseAdmin();
       const body = readBody<CreateCaptureBody>(req);
 
-      if (!body.user_id || !body.project_id || !body.package_id) {
-        return res.status(400).json({ error: 'user_id, project_id, and package_id are required' });
+      if (!body.user_id) {
+        return res.status(400).json({ error: 'user_id is required' });
       }
 
       const id = randomUUID();
       let photoUrl = '';
+      const normalizedProjectId = normalizeNullableText(body.project_id);
+      const normalizedPackageIdRaw = normalizeNullableText(body.package_id);
+      const normalizedPackageId = normalizedPackageIdRaw?.startsWith('local-') ? null : normalizedPackageIdRaw;
       const normalizedRequirementId =
         body.requirement_id && body.requirement_id !== 'quick-capture'
           ? body.requirement_id
           : null;
 
       if (body.photo_data) {
-        photoUrl = await uploadPhoto(body.package_id, id, body.photo_data);
+        photoUrl = await uploadPhoto(normalizedPackageId || undefined, id, body.photo_data);
       }
 
       const { error } = await supabase.from('captures').insert({
         id,
-        package_id: body.package_id,
+        package_id: normalizedPackageId,
         requirement_id: normalizedRequirementId,
         user_id: body.user_id,
-        project_id: body.project_id,
-        note: body.note || null,
-        measurement: body.measurement || null,
-        unit: body.unit || null,
+        project_id: normalizedProjectId,
+        note: normalizeNullableText(body.note),
+        measurement: normalizeNullableText(body.measurement),
+        unit: normalizeNullableText(body.unit),
         latitude: body.latitude || null,
         longitude: body.longitude || null,
-        address: body.address || null,
+        address: normalizeNullableText(body.address),
         photo_url: photoUrl,
         status: 'uploaded',
       });

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { useAuthStore } from '../store/auth';
-import { Camera, MapPin, CheckCircle, ArrowLeft, Loader2, RefreshCw, UploadCloud, Timer, Grid3X3, Copy, Mic, MicOff, Ruler, FileText, Image as ImageIcon, Zap, ListChecks } from 'lucide-react';
+import { Camera, MapPin, CheckCircle, ArrowLeft, Loader2, RefreshCw, UploadCloud, Timer, Grid3X3, Copy, Mic, MicOff, Ruler, FileText, Image as ImageIcon, Zap, ListChecks, Navigation, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
 import { format } from 'date-fns';
 import Map3D from '../components/Map3D';
 import imageCompression from 'browser-image-compression';
@@ -29,8 +29,6 @@ export default function CaptureFlow() {
   const [projectId, setProjectId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [packageId, setPackageId] = useState('');
-  const [useManualProject, setUseManualProject] = useState(false);
-  const [useManualTemplate, setUseManualTemplate] = useState(false);
   const [manualProjectName, setManualProjectName] = useState('');
   const [manualTemplateName, setManualTemplateName] = useState('');
   const [currentRequirementId, setCurrentRequirementId] = useState('');
@@ -51,10 +49,58 @@ export default function CaptureFlow() {
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [saveToGallery, setSaveToGallery] = useState(true);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [zoom, setZoom] = useState(1);
+  const [minZoom, setMinZoom] = useState(1);
+  const [maxZoom, setMaxZoom] = useState(1);
+  const [isZoomSupported, setIsZoomSupported] = useState(false);
+  const [isTorchSupported, setIsTorchSupported] = useState(false);
   
   const webcamRef = useRef<Webcam>(null);
   const recognitionRef = useRef<any>(null);
   const handleCaptureRef = useRef<() => void>(() => {});
+
+  const reverseGeocode = useCallback(async (lat: number, lng: number) => {
+    try {
+      const endpoint = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`;
+      const res = await fetch(endpoint, {
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      const displayName = data?.display_name;
+      if (displayName && typeof displayName === 'string') {
+        setAddress(displayName);
+      }
+    } catch {
+      // Keep GPS fallback if reverse geocoding fails.
+    }
+  }, []);
+
+  const handleUserMedia = useCallback((stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    if (!track?.getCapabilities) return;
+    const capabilities = track.getCapabilities() as any;
+
+    if (capabilities.zoom) {
+      setIsZoomSupported(true);
+      setMinZoom(capabilities.zoom.min || 1);
+      setMaxZoom(capabilities.zoom.max || 3);
+      setZoom(capabilities.zoom.min || 1);
+    } else {
+      setIsZoomSupported(false);
+      setZoom(1);
+      setMinZoom(1);
+      setMaxZoom(1);
+    }
+
+    setIsTorchSupported(!!capabilities.torch);
+  }, []);
 
   useEffect(() => {
     fetch('/api/projects')
@@ -62,17 +108,15 @@ export default function CaptureFlow() {
       .then(data => {
         const list = Array.isArray(data) ? data : [];
         setProjects(list);
-        if (list.length === 0) setUseManualProject(true);
       })
-      .catch(() => { setProjects([]); setUseManualProject(true); });
+      .catch(() => { setProjects([]); });
     fetch('/api/task-templates')
       .then(res => res.ok ? res.json() : [])
       .then(data => {
         const list = Array.isArray(data) ? data : [];
         setTemplates(list);
-        if (list.length === 0) setUseManualTemplate(true);
       })
-      .catch(() => { setTemplates([]); setUseManualTemplate(true); });
+      .catch(() => { setTemplates([]); });
     
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -84,16 +128,19 @@ export default function CaptureFlow() {
             altitude: pos.coords.altitude
           });
           setAddress(`${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`);
+          reverseGeocode(pos.coords.latitude, pos.coords.longitude);
         },
         (err) => console.error(err),
         { enableHighAccuracy: true }
       );
     }
-  }, []);
+  }, [reverseGeocode]);
 
   const startPackage = async () => {
-    const hasProject = useManualProject ? !!manualProjectName.trim() : !!projectId;
-    const hasTemplate = isQuickCapture || (useManualTemplate ? !!manualTemplateName.trim() : !!templateId);
+    const customProjectName = manualProjectName.trim();
+    const customTaskText = manualTemplateName.trim();
+    const hasProject = !!projectId || !!customProjectName;
+    const hasTemplate = isQuickCapture || !!templateId || !!customTaskText;
     if (!hasProject || !hasTemplate) return;
 
     const quickCaptureReq = [{
@@ -109,15 +156,17 @@ export default function CaptureFlow() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           user_id: user?.id, 
-          project_id: useManualProject ? null : projectId, 
-          task_template_id: isQuickCapture ? null : (useManualTemplate ? null : templateId)
+          project_id: projectId || null,
+          custom_project_name: projectId ? null : customProjectName,
+          task_template_id: isQuickCapture ? null : (templateId || null),
+          custom_task_text: isQuickCapture || templateId ? null : customTaskText
         }),
       });
       if (!res.ok) throw new Error('capture-packages API error');
       const { id } = await res.json();
       setPackageId(id);
       
-      if (isQuickCapture || useManualTemplate) {
+      if (isQuickCapture || !templateId) {
         setRequirements(quickCaptureReq);
         setCurrentRequirementId('quick-capture');
         setStep('camera');
@@ -185,17 +234,13 @@ export default function CaptureFlow() {
     // Project Name
     ctx.fillStyle = 'white';
     ctx.font = 'bold 48px sans-serif';
-    const projectName = useManualProject
-      ? (manualProjectName || 'Manual Entry')
-      : (projects.find(p => p.id === projectId)?.name || 'Unknown Project');
+    const projectName = projects.find(p => p.id === projectId)?.name || manualProjectName || 'Unknown Project';
     ctx.fillText(`Project: ${projectName}`, padding + 40, padding + 130);
 
     // Task Name
     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.font = '36px sans-serif';
-    const templateName = useManualTemplate
-      ? (manualTemplateName || 'Quick Capture')
-      : (templates.find(t => t.id === templateId)?.name || 'Unknown Task');
+    const templateName = templates.find(t => t.id === templateId)?.name || manualTemplateName || 'Quick Capture';
     const reqLabel = requirements.find(r => r.id === currentRequirementId)?.label || '';
     ctx.fillText(`${templateName}: ${reqLabel}`, padding + 40, padding + 180);
 
@@ -260,7 +305,7 @@ export default function CaptureFlow() {
     const finalImage = canvas.toDataURL('image/jpeg', 0.95);
     setPhotoData(finalImage);
     setStep('review');
-  }, [webcamRef, projectId, templateId, currentRequirementId, address, location, user, projects, templates, requirements, measurement, unit, useManualProject, useManualTemplate, manualProjectName, manualTemplateName]);
+  }, [webcamRef, projectId, templateId, currentRequirementId, address, location, user, projects, templates, requirements, measurement, unit, manualProjectName, manualTemplateName]);
 
   const handleCapture = useCallback(async () => {
     await drawOverlayAndCapture();
@@ -339,16 +384,24 @@ export default function CaptureFlow() {
 
   useEffect(() => {
     const video = webcamRef.current?.video;
-    if (video && video.srcObject) {
-      const track = (video.srcObject as MediaStream).getVideoTracks()[0];
-      const capabilities = track.getCapabilities() as any;
-      if (capabilities.torch) {
-        track.applyConstraints({
-          advanced: [{ torch: isTorchOn }]
-        } as any);
-      }
+    if (!video?.srcObject) return;
+
+    const track = (video.srcObject as MediaStream).getVideoTracks()[0];
+    if (!track?.applyConstraints) return;
+
+    const advanced: any[] = [];
+    if (isZoomSupported) {
+      advanced.push({ zoom });
     }
-  }, [isTorchOn]);
+    if (isTorchSupported) {
+      advanced.push({ torch: isTorchOn });
+    }
+    if (advanced.length === 0) return;
+
+    track.applyConstraints({ advanced } as any).catch(() => {
+      // Some browsers/devices reject runtime constraints.
+    });
+  }, [zoom, isZoomSupported, isTorchOn, isTorchSupported]);
 
   const handleTimerCapture = async () => {
     if (isTimerActive) return;
@@ -369,6 +422,16 @@ export default function CaptureFlow() {
 
   const savePhotoToPackage = () => {
     if (!photoData || !currentRequirementId) return;
+
+    if (saveToGallery) {
+      const link = document.createElement('a');
+      link.href = photoData;
+      link.download = `CIK_Proof_${format(new Date(), 'yyyyMMdd_HHmmss')}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
     setCapturedPhotos(prev => ({
       ...prev,
       [currentRequirementId]: { data: photoData, note, measurement, unit }
@@ -404,8 +467,8 @@ export default function CaptureFlow() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: user?.id,
-            project_id: projectId,
-            package_id: packageId,
+            project_id: projectId || null,
+            package_id: packageId.startsWith('local-') ? null : packageId,
             requirement_id: reqId === 'quick-capture' ? null : reqId,
             note: photo.note,
             measurement: photo.measurement,
@@ -473,65 +536,41 @@ export default function CaptureFlow() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Project</label>
-                {useManualProject ? (
-                  <input
-                    type="text"
-                    value={manualProjectName}
-                    onChange={(e) => setManualProjectName(e.target.value)}
-                    placeholder="Type project name…"
-                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                ) : (
-                  <select 
-                    value={projectId} 
-                    onChange={(e) => setProjectId(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
-                  >
-                    <option value="" disabled className="text-neutral-900">Select Project</option>
-                    {projects.map(p => <option key={p.id} value={p.id} className="text-neutral-900">{p.name}</option>)}
-                  </select>
-                )}
-                {projects.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setUseManualProject(v => !v)}
-                    className="mt-1 text-xs text-emerald-400 hover:text-emerald-300 underline"
-                  >
-                    {useManualProject ? 'Use dropdown' : 'Type manually'}
-                  </button>
-                )}
+                <select 
+                  value={projectId} 
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
+                >
+                  <option value="" className="text-neutral-900">Select Project (optional if typing custom)</option>
+                  {projects.map(p => <option key={p.id} value={p.id} className="text-neutral-900">{p.name}</option>)}
+                </select>
+                <input
+                  type="text"
+                  value={manualProjectName}
+                  onChange={(e) => setManualProjectName(e.target.value)}
+                  placeholder="Or type custom project name"
+                  className="mt-2 w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
               </div>
               
               {!isQuickCapture && (
                 <div>
                   <label className="block text-sm font-medium text-white/70 mb-2">Task Template</label>
-                  {useManualTemplate ? (
-                    <input
-                      type="text"
-                      value={manualTemplateName}
-                      onChange={(e) => setManualTemplateName(e.target.value)}
-                      placeholder="Type template name…"
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  ) : (
-                    <select 
-                      value={templateId} 
-                      onChange={(e) => setTemplateId(e.target.value)}
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
-                    >
-                      <option value="" disabled className="text-neutral-900">Select Template</option>
-                      {templates.map(t => <option key={t.id} value={t.id} className="text-neutral-900">{t.name}</option>)}
-                    </select>
-                  )}
-                  {templates.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setUseManualTemplate(v => !v)}
-                      className="mt-1 text-xs text-emerald-400 hover:text-emerald-300 underline"
-                    >
-                      {useManualTemplate ? 'Use dropdown' : 'Type manually'}
-                    </button>
-                  )}
+                  <select 
+                    value={templateId} 
+                    onChange={(e) => setTemplateId(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
+                  >
+                    <option value="" className="text-neutral-900">Select Template (optional if typing custom)</option>
+                    {templates.map(t => <option key={t.id} value={t.id} className="text-neutral-900">{t.name}</option>)}
+                  </select>
+                  <input
+                    type="text"
+                    value={manualTemplateName}
+                    onChange={(e) => setManualTemplateName(e.target.value)}
+                    placeholder="Or type custom task/job text"
+                    className="mt-2 w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
                 </div>
               )}
             </div>
@@ -539,8 +578,8 @@ export default function CaptureFlow() {
             <div className="space-y-3 mt-8">
               <button 
                 disabled={
-                  (useManualProject ? !manualProjectName.trim() : !projectId) ||
-                  (!isQuickCapture && (useManualTemplate ? !manualTemplateName.trim() : !templateId))
+                  (!projectId && !manualProjectName.trim()) ||
+                  (!isQuickCapture && !templateId && !manualTemplateName.trim())
                 }
                 onClick={startPackage}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -624,12 +663,36 @@ export default function CaptureFlow() {
                 ref={webcamRef}
                 screenshotFormat="image/jpeg"
                 videoConstraints={{ 
-                  facingMode: "environment",
+                  facingMode,
                   width: { ideal: 1920 },
                   height: { ideal: 1080 }
                 }}
+                onUserMedia={handleUserMedia}
                 className="w-full h-full object-cover"
               />
+
+              {isZoomSupported && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 bg-black/40 backdrop-blur-md p-2 rounded-full border border-white/10 z-20">
+                  <button
+                    onClick={() => setZoom((z) => Math.min(maxZoom, z + 0.5))}
+                    className="p-2 text-white hover:text-emerald-400 transition-colors"
+                  >
+                    <ZoomIn className="w-5 h-5" />
+                  </button>
+                  <div className="h-28 w-1 bg-white/20 rounded-full relative">
+                    <div
+                      className="absolute bottom-0 w-full bg-emerald-400 rounded-full"
+                      style={{ height: `${maxZoom > minZoom ? ((zoom - minZoom) / (maxZoom - minZoom)) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <button
+                    onClick={() => setZoom((z) => Math.max(minZoom, z - 0.5))}
+                    className="p-2 text-white hover:text-emerald-400 transition-colors"
+                  >
+                    <ZoomOut className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
               
               {/* Timer Overlay */}
               {isTimerActive && (
@@ -665,18 +728,27 @@ export default function CaptureFlow() {
             
             <div className="bg-black pb-10 pt-6 px-6 flex justify-between items-center gap-4">
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setFacingMode((v) => (v === 'environment' ? 'user' : 'environment'))}
+                  className="p-4 rounded-full bg-white/10 text-white/80 hover:text-white transition-colors"
+                  title="Switch camera"
+                >
+                  <SwitchCamera className="w-6 h-6" />
+                </button>
                 <button 
                   onClick={() => setShowGrid(!showGrid)} 
                   className={`p-4 rounded-full transition-colors ${showGrid ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/50'}`}
                 >
                   <Grid3X3 className="w-6 h-6" />
                 </button>
+                {isTorchSupported && (
                 <button 
                   onClick={() => setIsTorchOn(!isTorchOn)} 
                   className={`p-4 rounded-full transition-colors ${isTorchOn ? 'bg-yellow-500/20 text-yellow-500' : 'bg-white/10 text-white/50'}`}
                 >
                   <Zap className="w-6 h-6" />
                 </button>
+                )}
               </div>
               
               <button 
@@ -747,17 +819,38 @@ export default function CaptureFlow() {
                       </button>
                       <button 
                         onClick={() => {
-                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}`, '_blank');
+                          const coords = `${location.lat},${location.lng}`;
+                          const app = window.prompt('Open navigation in: google | waze | apple', 'google');
+                          const selected = (app || 'google').toLowerCase();
+                          if (selected === 'waze') {
+                            window.open(`https://waze.com/ul?ll=${coords}&navigate=yes`, '_blank');
+                            return;
+                          }
+                          if (selected === 'apple') {
+                            window.open(`http://maps.apple.com/?daddr=${coords}`, '_blank');
+                            return;
+                          }
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${coords}`, '_blank');
                         }}
                         className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 hover:bg-emerald-500/30"
                         title="Navigate"
                       >
-                        <RefreshCw className="w-4 h-4" />
+                        <Navigation className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                 </div>
               )}
+
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={saveToGallery}
+                  onChange={(e) => setSaveToGallery(e.target.checked)}
+                  className="accent-emerald-500"
+                />
+                Save photo to device gallery
+              </label>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

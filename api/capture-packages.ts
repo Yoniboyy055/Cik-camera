@@ -4,8 +4,16 @@ import { getSupabaseAdmin } from './_lib/supabaseAdmin';
 
 interface CreatePackageBody {
   user_id?: string;
-  project_id?: string;
+  project_id?: string | null;
   task_template_id?: string | null;
+  custom_project_name?: string | null;
+  custom_task_text?: string | null;
+}
+
+function normalizeNullableText(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 export default async function handler(req: any, res: any) {
@@ -16,9 +24,13 @@ export default async function handler(req: any, res: any) {
   try {
     const supabase = getSupabaseAdmin();
     const body = readBody<CreatePackageBody>(req);
+    const customProjectName = normalizeNullableText(body.custom_project_name);
+    const customTaskText = normalizeNullableText(body.custom_task_text);
+    const projectId = body.project_id || null;
+    const taskTemplateId = body.task_template_id || null;
 
-    if (!body.user_id || !body.project_id) {
-      return res.status(400).json({ error: 'user_id and project_id are required' });
+    if (!body.user_id || (!projectId && !customProjectName)) {
+      return res.status(400).json({ error: 'user_id and either project_id or custom_project_name are required' });
     }
 
     const id = randomUUID();
@@ -26,8 +38,10 @@ export default async function handler(req: any, res: any) {
     const { error } = await supabase.from('capture_packages').insert({
       id,
       user_id: body.user_id,
-      project_id: body.project_id,
-      task_template_id: body.task_template_id || null,
+      project_id: projectId,
+      custom_project_name: customProjectName,
+      task_template_id: taskTemplateId,
+      custom_task_text: customTaskText,
       status: 'in_progress',
     });
 

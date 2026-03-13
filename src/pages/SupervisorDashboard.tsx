@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { LogOut, Search, Filter, MapPin, Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, Copy, FileOutput, Navigation, Settings, BarChart3 } from 'lucide-react';
@@ -14,6 +14,11 @@ export default function SupervisorDashboard() {
   const [captures, setCaptures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCapture, setSelectedCapture] = useState<any | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterWorker, setFilterWorker] = useState('');
+  const [filterProject, setFilterProject] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   const fetchCaptures = () => {
     fetch('/api/captures')
@@ -44,7 +49,45 @@ export default function SupervisorDashboard() {
 
   useEffect(() => {
     fetchCaptures();
+    const interval = setInterval(fetchCaptures, 30000);
+    return () => clearInterval(interval);
   }, []);
+
+  const filteredCaptures = useMemo(() => {
+    return captures.filter((pkg: any) => {
+      const search = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !search ||
+        pkg.project_name?.toLowerCase().includes(search) ||
+        pkg.user_name?.toLowerCase().includes(search) ||
+        pkg.template_name?.toLowerCase().includes(search);
+      const matchesWorker = !filterWorker || pkg.user_name === filterWorker;
+      const matchesProject = !filterProject || pkg.project_name === filterProject;
+      const matchesStatus = !filterStatus || pkg.status === filterStatus;
+      const matchesDate = !filterDate || (pkg.created_at || '').startsWith(filterDate);
+      return matchesSearch && matchesWorker && matchesProject && matchesStatus && matchesDate;
+    });
+  }, [captures, filterDate, filterProject, filterStatus, filterWorker, searchQuery]);
+
+  const uniqueWorkers = useMemo(
+    () => Array.from(new Set(captures.map((pkg: any) => pkg.user_name).filter(Boolean))),
+    [captures]
+  );
+
+  const uniqueProjects = useMemo(
+    () => Array.from(new Set(captures.map((pkg: any) => pkg.project_name).filter(Boolean))),
+    [captures]
+  );
+
+  const imageUrlToDataUrl = async (url: string) => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  };
 
   const updateStatus = async (id: string, status: string) => {
     const endpoint = id === 'legacy' ? `/api/captures/${id}/status` : `/api/packages/${id}/status`;
@@ -108,9 +151,8 @@ export default function SupervisorDashboard() {
         for (const capture of photos) {
           if (capture.photo_url) {
             try {
-              // Simple image placement - in a real app we'd fetch and convert to base64
-              // jsPDF can take a URL if it's on the same origin or has CORS
-              doc.addImage(capture.photo_url, 'JPEG', xPos, yPos, 50, 65);
+              const imageData = await imageUrlToDataUrl(capture.photo_url);
+              doc.addImage(imageData, 'JPEG', xPos, yPos, 50, 65);
               xPos += 55;
             } catch (e) {
               doc.rect(xPos, yPos, 50, 65);
@@ -204,12 +246,49 @@ export default function SupervisorDashboard() {
               <input 
                 type="text" 
                 placeholder="Search worker or project..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-2 bg-brand-bg border border-brand-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary w-64 transition-all text-brand-text placeholder:text-brand-text-muted"
               />
             </div>
-            <button className="p-2 border border-brand-border rounded-lg text-brand-text-muted hover:bg-brand-border/50 transition-colors">
-              <Filter className="w-4 h-4" />
-            </button>
+            <div className="flex gap-2">
+              <select
+                value={filterWorker}
+                onChange={(e) => setFilterWorker(e.target.value)}
+                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
+              >
+                <option value="">All Workers</option>
+                {uniqueWorkers.map((worker) => (
+                  <option key={worker} value={worker}>{worker}</option>
+                ))}
+              </select>
+              <select
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
+                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
+              >
+                <option value="">All Projects</option>
+                {uniqueProjects.map((project) => (
+                  <option key={project} value={project}>{project}</option>
+                ))}
+              </select>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
+              >
+                <option value="">All Statuses</option>
+                <option value="uploaded">Uploaded</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
+              />
+            </div>
           </div>
         </header>
 
@@ -220,10 +299,10 @@ export default function SupervisorDashboard() {
               <div className="space-y-4">
                 {[1, 2, 3].map(i => <div key={i} className="h-32 bg-brand-surface rounded-xl border border-brand-border animate-pulse"></div>)}
               </div>
-            ) : captures.length === 0 ? (
+            ) : filteredCaptures.length === 0 ? (
               <div className="text-center py-20 text-brand-text-muted">No packages found.</div>
             ) : (
-              captures.map(pkg => (
+              filteredCaptures.map(pkg => (
                 <div 
                   key={pkg.id} 
                   onClick={() => setSelectedCapture(pkg)}
