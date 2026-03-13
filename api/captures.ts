@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { getSupabaseAdmin, getStorageBucket } from './_lib/supabaseAdmin';
+import { methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { getSupabaseAdmin, getStorageBucket } from './_lib/supabaseAdmin.js';
 
 interface CreateCaptureBody {
   user_id?: string;

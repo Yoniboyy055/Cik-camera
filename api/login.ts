@@ -1,5 +1,5 @@
-import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { getSupabaseAdmin } from './_lib/supabaseAdmin';
+import { methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { getSupabaseAdmin } from './_lib/supabaseAdmin.js';
 
 interface LoginBody {
   email?: string;

@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { requireEnv } from './env';
+import { requireEnv } from './env.js';
 
 const REQUEST_TIMEOUT_MS = 8000;
 

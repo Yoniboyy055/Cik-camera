@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { methodNotAllowed, readBody, serverError } from './_lib/http';
-import { getSupabaseAdmin } from './_lib/supabaseAdmin';
+import { methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { getSupabaseAdmin } from './_lib/supabaseAdmin.js';
 
 interface CreatePackageBody {
   user_id?: string;
