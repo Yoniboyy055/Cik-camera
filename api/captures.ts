@@ -77,7 +77,7 @@ async function fetchCaptureRows() {
       ? supabase.from('task_template_requirements').select('id, label').in('id', requirementIds)
       : Promise.resolve({ data: [], error: null }),
     packageIds.length
-      ? supabase.from('capture_packages').select('id, task_template_id').in('id', packageIds)
+      ? supabase.from('capture_packages').select('id, task_template_id, custom_project_name, custom_task_text').in('id', packageIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -106,17 +106,18 @@ async function fetchCaptureRows() {
   const usersById = new Map((usersRes.data || []).map((row) => [row.id, row.name]));
   const projectsById = new Map((projectsRes.data || []).map((row) => [row.id, row.name]));
   const requirementsById = new Map((requirementsRes.data || []).map((row) => [row.id, row.label]));
-  const packagesById = new Map((packagesRes.data || []).map((row) => [row.id, row.task_template_id]));
+  const packagesById = new Map((packagesRes.data || []).map((row) => [row.id, row]));
   const templatesById = new Map((templatesRes.data || []).map((row) => [row.id, row.name]));
 
   return captureRows.map((row) => {
-    const templateId = row.package_id ? packagesById.get(row.package_id) : null;
+    const pkgRow: any = row.package_id ? packagesById.get(row.package_id) : null;
+    const templateId = pkgRow?.task_template_id ?? null;
     return {
       ...row,
       user_name: row.user_id ? usersById.get(row.user_id) || null : null,
-      project_name: row.project_id ? projectsById.get(row.project_id) || null : null,
+      project_name: row.project_id ? projectsById.get(row.project_id) || null : (pkgRow?.custom_project_name || null),
       requirement_label: row.requirement_id ? requirementsById.get(row.requirement_id) || null : null,
-      template_name: templateId ? templatesById.get(templateId) || null : null,
+      template_name: templateId ? templatesById.get(templateId) || null : (pkgRow?.custom_task_text || null),
     };
   });
 }

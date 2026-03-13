@@ -49,6 +49,8 @@ create table if not exists captures (
   longitude double precision,
   address text,
   photo_url text,
+  custom_project_name text,
+  custom_task_text text,
   status text,
   created_at timestamptz default now()
 );
