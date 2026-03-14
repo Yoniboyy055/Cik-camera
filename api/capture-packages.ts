@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { requireSession } from './_lib/auth.js';
+import { badRequest, methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { enforceRateLimit } from './_lib/rateLimit.js';
 import { getSupabaseAdmin } from './_lib/supabaseAdmin.js';
+import { asObject, optionalString, ValidationError } from './_lib/validation.js';
 
 interface CreatePackageBody {
   user_id?: string;
@@ -21,23 +24,36 @@ export default async function handler(req: any, res: any) {
     return methodNotAllowed(res, ['POST']);
   }
 
+  if (!enforceRateLimit(req, res, 'capture-packages:create', 60, 60 * 1000)) {
+    return;
+  }
+
+  const session = requireSession(req, res);
+  if (!session) {
+    return;
+  }
+
   try {
     const supabase = getSupabaseAdmin();
-    const body = readBody<CreatePackageBody>(req);
-    const customProjectName = normalizeNullableText(body.custom_project_name);
-    const customTaskText = normalizeNullableText(body.custom_task_text);
-    const projectId = body.project_id || null;
-    const taskTemplateId = body.task_template_id || null;
+    const body = asObject(readBody<CreatePackageBody>(req));
+    const customProjectName = normalizeNullableText(
+      optionalString(body.custom_project_name, 'custom_project_name', { allowNull: true }) ?? null,
+    );
+    const customTaskText = normalizeNullableText(
+      optionalString(body.custom_task_text, 'custom_task_text', { allowNull: true }) ?? null,
+    );
+    const projectId = optionalString(body.project_id, 'project_id', { allowNull: true }) ?? null;
+    const taskTemplateId = optionalString(body.task_template_id, 'task_template_id', { allowNull: true }) ?? null;
 
-    if (!body.user_id || (!projectId && !customProjectName)) {
-      return res.status(400).json({ error: 'user_id and either project_id or custom_project_name are required' });
+    if (!projectId && !customProjectName) {
+      return badRequest(res, 'either project_id or custom_project_name is required');
     }
 
     const id = randomUUID();
 
     const { error } = await supabase.from('capture_packages').insert({
       id,
-      user_id: body.user_id,
+      user_id: session.id,
       project_id: projectId,
       custom_project_name: customProjectName,
       task_template_id: taskTemplateId,
@@ -51,6 +67,9 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({ id });
   } catch (error) {
+    if (error instanceof ValidationError) {
+      return badRequest(res, error.message);
+    }
     return serverError(res, error);
   }
 }

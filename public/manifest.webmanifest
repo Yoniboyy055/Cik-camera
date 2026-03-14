@@ -1,0 +1,9 @@
+{
+  "name": "GrandProof",
+  "short_name": "GrandProof",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "description": "Verified Field Evidence Platform"
+}

@@ -49,7 +49,7 @@ export default function WorkerHome() {
             <p className="text-xs text-brand-text-muted">Field Worker</p>
           </div>
         </div>
-        <button onClick={logout} className="p-2 text-brand-text-muted hover:text-brand-text transition-colors">
+        <button onClick={() => void logout()} className="p-2 text-brand-text-muted hover:text-brand-text transition-colors">
           <LogOut className="w-5 h-5" />
         </button>
       </header>

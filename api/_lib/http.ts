@@ -3,6 +3,18 @@ export function methodNotAllowed(res: any, allowed: string[]) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
+export function badRequest(res: any, message: string) {
+  return res.status(400).json({ error: message });
+}
+
+export function unauthorized(res: any, message = 'Authentication required') {
+  return res.status(401).json({ error: message });
+}
+
+export function forbidden(res: any, message = 'Forbidden') {
+  return res.status(403).json({ error: message });
+}
+
 export function serverError(res: any, error: unknown) {
   let message = 'Internal server error';
   if (error instanceof Error) {

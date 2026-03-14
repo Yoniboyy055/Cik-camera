@@ -1,29 +1,43 @@
-import { methodNotAllowed, readBody, serverError } from '../../_lib/http.js';
+import { requireSession } from '../../_lib/auth.js';
+import { badRequest, methodNotAllowed, readBody, serverError } from '../../_lib/http.js';
+import { enforceRateLimit } from '../../_lib/rateLimit.js';
 import { getSupabaseAdmin } from '../../_lib/supabaseAdmin.js';
+import { asObject, optionalEnum, ValidationError } from '../../_lib/validation.js';
 
 interface StatusBody {
   status?: string;
 }
+
+const ALLOWED_STATUSES = ['submitted', 'approved', 'rejected'] as const;
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'PATCH') {
     return methodNotAllowed(res, ['PATCH']);
   }
 
+  if (!enforceRateLimit(req, res, 'capture-status:update', 60, 60 * 1000)) {
+    return;
+  }
+
+  const session = requireSession(req, res, ['supervisor']);
+  if (!session) {
+    return;
+  }
+
   const idParam = req.query?.id;
   const id = Array.isArray(idParam) ? idParam[0] : idParam;
 
   if (!id) {
-    return res.status(400).json({ error: 'Capture id is required' });
+    return badRequest(res, 'Capture id is required');
   }
 
   try {
     const supabase = getSupabaseAdmin();
-    const body = readBody<StatusBody>(req);
-    const status = body.status;
+    const body = asObject(readBody<StatusBody>(req));
+    const status = optionalEnum(body.status, 'status', ALLOWED_STATUSES);
 
     if (!status) {
-      return res.status(400).json({ error: 'status is required' });
+      return badRequest(res, 'status is required');
     }
 
     const { data: updatedCaptureRows, error: captureError } = await supabase
@@ -60,6 +74,9 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({ success: true });
   } catch (error) {
+    if (error instanceof ValidationError) {
+      return badRequest(res, error.message);
+    }
     return serverError(res, error);
   }
 }

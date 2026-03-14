@@ -9,18 +9,33 @@ interface User {
 
 interface AuthState {
   user: User | null;
+  ready: boolean;
+  init: () => Promise<void>;
   login: (user: User) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: JSON.parse(localStorage.getItem('gp_user') || 'null'),
-  login: (user) => {
-    localStorage.setItem('gp_user', JSON.stringify(user));
-    set({ user });
+  user: null,
+  ready: false,
+  init: async () => {
+    try {
+      const res = await fetch('/api/session');
+      const data = await res.json();
+      set({ user: data.user ?? null, ready: true });
+    } catch {
+      set({ user: null, ready: true });
+    }
   },
-  logout: () => {
-    localStorage.removeItem('gp_user');
-    set({ user: null });
+  login: (user) => {
+    set({ user, ready: true });
+  },
+  logout: async () => {
+    set({ user: null, ready: true });
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } catch {
+      // Best-effort logout even if the network request fails.
+    }
   },
 }));

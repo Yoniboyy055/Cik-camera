@@ -361,7 +361,7 @@ export default function SupervisorDashboard() {
         )}
         <button
           title={collapsed ? 'Sign Out' : undefined}
-          onClick={logout}
+          onClick={() => void logout()}
           className={`flex items-center gap-2 px-3 py-2 text-brand-text-muted hover:bg-brand-border/50 rounded-lg text-sm font-medium border border-brand-border transition-colors ${collapsed ? '' : 'w-full justify-center'}`}
         >
           <LogOut className="w-4 h-4 shrink-0" />

@@ -5,3 +5,11 @@ export function requireEnv(name: string): string {
   }
   return value.trim();
 }
+
+export function optionalEnv(name: string): string | null {
+  const value = process.env[name];
+  if (!value || !value.trim()) {
+    return null;
+  }
+  return value.trim();
+}

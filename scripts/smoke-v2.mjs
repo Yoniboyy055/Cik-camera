@@ -2,9 +2,6 @@
 /**
  * GrandProof V2 — Smoke Test
  * Usage: node scripts/smoke-v2.mjs https://cik-camera.vercel.app
- *
- * Auth note: the current API is MVP-grade (no JWTs) – identity is conveyed by
- * passing user_id in the request body.  The smoke test mirrors this approach.
  */
 
 import { createHash } from 'node:crypto';
@@ -14,6 +11,7 @@ const PASS = '\x1b[32m✓\x1b[0m';
 const FAIL = '\x1b[31m✗\x1b[0m';
 
 let failCount = 0;
+let cookieJar = '';
 
 function assert(label, condition, detail = '') {
   if (condition) {
@@ -26,11 +24,18 @@ function assert(label, condition, detail = '') {
 
 async function req(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
+  if (cookieJar) {
+    headers.Cookie = cookieJar;
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+  const setCookie = res.headers.get('set-cookie');
+  if (setCookie) {
+    cookieJar = setCookie.split(',').map((cookie) => cookie.split(';')[0].trim()).join('; ');
+  }
   let json = null;
   try { json = await res.json(); } catch { /* empty body */ }
   return { status: res.status, ok: res.ok, json };
@@ -91,6 +96,14 @@ console.log('3. Health');
   assert('HTTP 200', r.ok, `got ${r.status}`);
 }
 
+// 3b. Session bootstrap
+console.log('3b. Session bootstrap');
+{
+  const r = await req('GET', '/api/session');
+  assert('HTTP 200', r.ok, `got ${r.status} — ${JSON.stringify(r.json)}`);
+  assert('returns authenticated user', !!r.json?.user?.id, JSON.stringify(r.json));
+}
+
 // 4. Projects
 console.log('4. Projects');
 {
@@ -114,7 +127,6 @@ console.log('5. Task templates');
 console.log('6. Create capture package');
 {
   const r = await req('POST', '/api/capture-packages', {
-    user_id: userId,
     project_id: projectId,
     task_template_id: templateId ?? null,
     custom_task_text: 'Smoke test task',
@@ -136,7 +148,6 @@ console.log('7. Upload capture');
 
   // First attempt: include GPS fields (requires V2 migration to be applied)
   let r = await req('POST', '/api/captures', {
-    user_id: userId,
     project_id: projectId,
     package_id: packageId,
     latitude: 32.08088,
@@ -157,7 +168,6 @@ console.log('7. Upload capture');
     console.log(`  \x1b[33m⚠ GPS columns missing — apply migration then re-run. Retrying without GPS...\x1b[0m`);
     console.log('    Run: supabase/migrations/20260313000000_grandproof_v2_core.sql');
     r = await req('POST', '/api/captures', {
-      user_id: userId,
       project_id: projectId,
       package_id: packageId,
       latitude: 32.08088,
@@ -182,7 +192,6 @@ console.log('8. Patch package status → submitted');
 {
   const r = await req('PATCH', `/api/packages/${packageId}/status`, {
     status: 'submitted',
-    actor_id: userId,
   });
   assert('HTTP 200', r.ok, `got ${r.status} — ${JSON.stringify(r.json)}`);
 }

@@ -18,6 +18,11 @@ import { Toaster } from 'sonner';
 
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const user = useAuthStore((state) => state.user);
+  const ready = useAuthStore((state) => state.ready);
+
+  if (!ready) {
+    return <div className="min-h-screen bg-brand-bg" />;
+  }
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -32,11 +37,13 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode,
 
 export default function App() {
   const user = useAuthStore((state) => state.user);
+  const initAuth = useAuthStore((state) => state.init);
 
   // Start background sync listener once on mount
   useEffect(() => {
     startSyncListener();
-  }, []);
+    void initAuth();
+  }, [initAuth]);
 
   return (
     <BrowserRouter>

@@ -49,6 +49,8 @@ This app is now structured for Vercel deployment:
 
 - `POST /api/login`
 - `POST /api/register`
+- `GET /api/session`
+- `POST /api/logout`
 - `GET /api/projects`
 - `GET /api/task-templates`
 - `GET /api/task-templates/:id/requirements`
@@ -73,6 +75,17 @@ Set these in Vercel Project Settings:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET` (optional, defaults to `captures`)
+- `SESSION_SECRET`
+
+## Auth Model
+
+The API now uses signed HTTP-only session cookies.
+
+1. `POST /api/login` returns the current user and sets the session cookie.
+2. Protected routes read the authenticated user from the cookie instead of trusting `user_id` from the client.
+3. `POST /api/logout` clears the session cookie.
+
+For production, set a strong `SESSION_SECRET` in Vercel before deploying.
 
 ## Local Development
 

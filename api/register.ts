@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { hashPassword } from './_lib/auth.js';
+import { badRequest, methodNotAllowed, readBody, serverError } from './_lib/http.js';
+import { enforceRateLimit } from './_lib/rateLimit.js';
 import { getSupabaseAdmin } from './_lib/supabaseAdmin.js';
+import { asObject, requiredEmail, requiredString, ValidationError } from './_lib/validation.js';
 
 interface RegisterBody {
   name?: string;
@@ -13,20 +16,16 @@ export default async function handler(req: any, res: any) {
     return methodNotAllowed(res, ['POST']);
   }
 
+  if (!enforceRateLimit(req, res, 'register', 10, 15 * 60 * 1000)) {
+    return;
+  }
+
   try {
     const supabase = getSupabaseAdmin();
-    const body = readBody<RegisterBody>(req);
-    const name = body.name?.trim();
-    const email = body.email?.trim().toLowerCase();
-    const password = body.password;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email and password are required' });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    }
+    const body = asObject(readBody<RegisterBody>(req));
+    const name = requiredString(body.name, 'name', { min: 2, max: 100 });
+    const email = requiredEmail(body.email);
+    const password = requiredString(body.password, 'password', { min: 8, max: 200 });
 
     const { data: existing, error: lookupError } = await supabase
       .from('users')
@@ -48,7 +47,7 @@ export default async function handler(req: any, res: any) {
       id,
       name,
       email,
-      password,
+      password: hashPassword(password),
       role: 'worker',
       created_at: new Date().toISOString(),
     });
@@ -59,6 +58,9 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({ user: { id, name, email, role: 'worker' } });
   } catch (error) {
+    if (error instanceof ValidationError) {
+      return badRequest(res, error.message);
+    }
     return serverError(res, error);
   }
 }

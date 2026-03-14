@@ -1,15 +1,12 @@
 /**
  * GrandProof V2 — Report Bundle
- * Generates a downloadable Evidence ZIP with:
- *   manifest.json, captures/<id>.jpg, captures/<id>.json,
- *   audit/<package_id>.json, verify_instructions.txt
- *
- * Uses JSZip-compatible approach via a plain Blob + URL.createObjectURL.
- * NOTE: We avoid adding a new library; instead we build a ZIP manually using
- * the ZIP local-file and central-directory format via ArrayBuffer operations.
- *
- * For production: install 'jszip' (npm i jszip) and uncomment the JSZip path.
+ * Generates a downloadable Evidence ZIP with a manifest, per-capture metadata,
+ * the original images, and verification instructions.
  */
+
+import JSZip from 'jszip';
+
+const EVIDENCE_CACHE = 'gp-images-v1';
 
 export interface BundleCapture {
   id: string;
@@ -37,28 +34,19 @@ export interface BundlePackage {
   captures: BundleCapture[];
 }
 
-/** Fetch an image URL and return it as a base64 data URL string */
-async function fetchImageAsBase64(url: string): Promise<string | null> {
+async function fetchImageBlob(url: string): Promise<Blob | null> {
   try {
     const resp = await fetch(url);
     if (!resp.ok) return null;
-    const blob = await resp.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    return await resp.blob();
   } catch {
     return null;
   }
 }
 
-/**
- * Download a single package's evidence as a structured JSON manifest + image URLs.
- * Generates a .json manifest download for now; full ZIP requires jszip.
- */
 export async function downloadEvidenceBundle(pkg: BundlePackage): Promise<void> {
+  const zip = new JSZip();
+
   const manifest: Record<string, unknown> = {
     grandproof_version: '2.0',
     product_name: 'GrandProof',
@@ -82,19 +70,63 @@ export async function downloadEvidenceBundle(pkg: BundlePackage): Promise<void> 
       photo_url: c.photo_url,
       captured_at: c.created_at,
     })),
-    verify_instructions:
-      'To verify evidence integrity: for each capture, download the photo_url ' +
-      'and compute SHA-256 of the image bytes. The result must match the stored evidence_sha256. ' +
-      'Any mismatch indicates the image has been tampered with.',
   };
 
-  const json = JSON.stringify(manifest, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+  zip.file(
+    'verify_instructions.txt',
+    'For each file in captures/, compute the SHA-256 hash of the image bytes.\n' +
+      'Compare the result to the evidence_sha256 field in the matching metadata file.\n' +
+      'Any mismatch indicates the image has been modified after capture.',
+  );
+
+  const capturesFolder = zip.folder('captures');
+  if (!capturesFolder) {
+    throw new Error('Failed to create ZIP bundle');
+  }
+
+  await Promise.all(
+    pkg.captures.map(async (capture) => {
+      capturesFolder.file(
+        `${capture.id}.json`,
+        JSON.stringify(
+          {
+            id: capture.id,
+            requirement_label: capture.requirement_label,
+            project_name: capture.project_name,
+            template_name: capture.template_name,
+            address: capture.address,
+            latitude: capture.latitude,
+            longitude: capture.longitude,
+            note: capture.note,
+            measurement: capture.measurement,
+            unit: capture.unit,
+            evidence_sha256: capture.evidence_sha256,
+            photo_url: capture.photo_url,
+            created_at: capture.created_at,
+          },
+          null,
+          2,
+        ),
+      );
+
+      if (!capture.photo_url) {
+        return;
+      }
+
+      const blob = await fetchImageBlob(capture.photo_url);
+      if (blob) {
+        capturesFolder.file(`${capture.id}.jpg`, blob);
+      }
+    }),
+  );
+
+  const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   const date = new Date().toISOString().slice(0, 10);
-  a.download = `grandproof-evidence-${pkg.id.slice(0, 8)}-${date}.json`;
+  a.download = `grandproof-evidence-${pkg.id.slice(0, 8)}-${date}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -107,7 +139,7 @@ export async function downloadEvidenceBundle(pkg: BundlePackage): Promise<void> 
  */
 export async function makeEvidenceAvailableOffline(packages: BundlePackage[]): Promise<number> {
   if (!('caches' in window)) return 0;
-  const cache = await caches.open('gp-evidence-v2');
+  const cache = await caches.open(EVIDENCE_CACHE);
   let count = 0;
   for (const pkg of packages) {
     for (const cap of pkg.captures) {
@@ -136,8 +168,15 @@ export async function prefetchEvidenceImages(
   );
   const total = urls.length;
   let done = 0;
+  const cache = 'caches' in window ? await caches.open(EVIDENCE_CACHE) : null;
   for (const url of urls) {
-    await fetchImageAsBase64(url).catch(() => null);
+    try {
+      if (cache && !(await cache.match(url))) {
+        await cache.add(url);
+      }
+    } catch {
+      // ignore cache failures and continue
+    }
     done++;
     onProgress?.(done, total);
   }
