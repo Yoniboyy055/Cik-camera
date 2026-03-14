@@ -67,21 +67,37 @@ async function uploadCapture(captureId: string): Promise<void> {
     reader.readAsDataURL(blob.blob);
   });
 
+  // Resolve the effective package ID: use the server-assigned remote ID so
+  // the capture lands in the correct package instead of being nulled out by
+  // the api/captures.ts local-* guard.
+  let resolvedPackageId: string | null = capture.package_id ?? null;
+  if (capture.package_id) {
+    const pkg = await offlineDB.getPackage(capture.package_id);
+    if (pkg?.remote_package_id) {
+      resolvedPackageId = pkg.remote_package_id;
+    } else if (capture.package_id.startsWith('local-') || capture.package_id.startsWith('gp-offline-')) {
+      throw new Error(`Package ${capture.package_id} not yet synced — deferring capture`);
+    }
+  }
+
   const resp = await fetch('/api/captures', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       user_id: capture.user_id,
       project_id: capture.project_id,
-      package_id: capture.package_id,
+      package_id: resolvedPackageId,
       requirement_id: capture.requirement_id,
       note: capture.note,
       measurement: capture.measurement,
       unit: capture.unit,
       latitude: capture.latitude,
       longitude: capture.longitude,
+      gps_accuracy_m: capture.gps_accuracy_m ?? null,
+      altitude_m: capture.altitude_m ?? null,
       address: capture.address,
       evidence_sha256: capture.evidence_sha256,
+      capture_source: 'worker',
       photo_data: photoData,
     }),
   });
@@ -113,6 +129,14 @@ async function uploadPackage(packageId: string): Promise<void> {
   if (!resp.ok) {
     const body = await resp.text();
     throw new Error(`HTTP ${resp.status}: ${body}`);
+  }
+
+  // Store the server-assigned ID so uploadCapture() can use it for grouping.
+  const data = await resp.json();
+  const remoteId: string | undefined = data?.id;
+  if (remoteId) {
+    await offlineDB.savePackage({ ...pkg, remote_package_id: remoteId });
+    await offlineDB.logEvent('info', 'package synced, remote ID stored', { packageId, remoteId });
   }
 }
 

@@ -121,6 +121,7 @@ export interface OfflinePackage {
   status: string;
   sync_state: 'draft' | 'queued' | 'syncing' | 'uploaded' | 'confirmed' | 'dead_letter';
   created_at: string;
+  remote_package_id?: string | null; // server-assigned ID stored after successful sync
 }
 
 export interface OfflineCapture {

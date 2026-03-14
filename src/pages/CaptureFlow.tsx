@@ -532,7 +532,7 @@ export default function CaptureFlow() {
 
     // ── Online path ───────────────────────────────────────────────────────────
     try {
-      // Upload each photo in the package
+      // Upload each photo in the package — any non-2xx throws to catch block
       const uploadPromises = Object.entries(capturedPhotos).map(async ([reqId, photo]) => {
         // High quality compression
         const blob = await (await fetch(photo.data)).blob();
@@ -550,7 +550,7 @@ export default function CaptureFlow() {
         });
         const evidenceSha256 = await sha256Blob(compressedFile);
 
-        return fetch('/api/captures', {
+        const res = await fetch('/api/captures', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -563,21 +563,26 @@ export default function CaptureFlow() {
             unit: photo.unit,
             latitude: location?.lat,
             longitude: location?.lng,
+            gps_accuracy_m: location?.accuracy ?? null,
+            altitude_m: location?.altitude ?? null,
             address,
             evidence_sha256: evidenceSha256,
             photo_data: compressedBase64
           }),
         });
+        if (!res.ok) throw new Error(`Capture upload failed: HTTP ${res.status} ${await res.text()}`);
+        return true;
       });
 
       await Promise.all(uploadPromises);
       
-      // Update package status
-      await fetch(`/api/packages/${packageId}/status`, {
+      // Only mark package submitted after all captures confirmed successful
+      const statusRes = await fetch(`/api/packages/${packageId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'completed' }),
+        body: JSON.stringify({ status: 'submitted' }),
       });
+      if (!statusRes.ok) throw new Error(`Package status update failed: HTTP ${statusRes.status}`);
 
       setStep('success');
     } catch (err) {

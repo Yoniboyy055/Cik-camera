@@ -3,6 +3,10 @@ import { getSupabaseAdmin } from '../../_lib/supabaseAdmin.js';
 
 interface StatusBody {
   status?: string;
+  rejection_reason_code?: string;
+  rejection_reason_text?: string;
+  actor_id?: string;
+  actor_name?: string;
 }
 
 export default async function handler(req: any, res: any) {
@@ -26,9 +30,22 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'status is required' });
     }
 
+    // Fetch previous status for the audit log
+    const { data: prevRow } = await supabase
+      .from('capture_packages')
+      .select('status')
+      .eq('id', packageId)
+      .single();
+
+    const packageUpdate: Record<string, unknown> = { status };
+    if (status === 'rejected') {
+      packageUpdate.rejection_reason_code = body.rejection_reason_code ?? null;
+      packageUpdate.rejection_reason_text = body.rejection_reason_text ?? null;
+    }
+
     const { error: packageError } = await supabase
       .from('capture_packages')
-      .update({ status })
+      .update(packageUpdate)
       .eq('id', packageId);
 
     if (packageError) {
@@ -43,6 +60,17 @@ export default async function handler(req: any, res: any) {
     if (capturesError) {
       return serverError(res, capturesError);
     }
+
+    // Write audit log row (best-effort — non-fatal if table not yet migrated)
+    await supabase.from('capture_audit_log').insert({
+      package_id: packageId,
+      actor_id: body.actor_id ?? 'server',
+      actor_name: body.actor_name ?? 'server',
+      from_status: prevRow?.status ?? null,
+      to_status: status,
+      reason_code: body.rejection_reason_code ?? null,
+      reason_text: body.rejection_reason_text ?? null,
+    }).then(() => null, () => null); // swallow if table missing
 
     return res.status(200).json({ success: true });
   } catch (error) {
