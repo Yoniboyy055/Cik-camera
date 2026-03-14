@@ -174,13 +174,20 @@ export default function SupervisorDashboard() {
   );
 
   const imageUrlToDataUrl = async (url: string) => {
-    const response = await fetch(url);
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Image fetch failed (${response.status})`);
+    }
     const blob = await response.blob();
-    return await new Promise<string>((resolve) => {
+    const dataUrl = await new Promise<string>((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
       reader.readAsDataURL(blob);
     });
+
+    const mime = blob.type.toLowerCase();
+    const format = mime.includes('png') ? 'PNG' : 'JPEG';
+    return { dataUrl, format } as const;
   };
 
   const updateStatus = async (id: string, status: string, rejectionCode?: string, rejectionText?: string) => {
@@ -233,6 +240,7 @@ export default function SupervisorDashboard() {
     
     try {
       const doc = new jsPDF();
+      const embeddedCaptureIds: string[] = [];
       const dateStr = format(new Date(), 'MMM d, yyyy');
       
       doc.setFontSize(22);
@@ -272,9 +280,20 @@ export default function SupervisorDashboard() {
           if (capture.photo_url) {
             try {
               const imageData = await imageUrlToDataUrl(capture.photo_url);
-              doc.addImage(imageData, 'JPEG', xPos, yPos, 50, 65);
+              doc.addImage(imageData.dataUrl, imageData.format, xPos, yPos, 50, 65);
+              embeddedCaptureIds.push(capture.id);
+              console.info('[report:embed-image:ok]', {
+                capture_id: capture.id,
+                source_url: capture.photo_url,
+                format: imageData.format,
+              });
               xPos += 55;
             } catch (e) {
+              console.warn('[report:embed-image:failed]', {
+                capture_id: capture.id,
+                source_url: capture.photo_url,
+                reason: e instanceof Error ? e.message : String(e),
+              });
               doc.rect(xPos, yPos, 50, 65);
               doc.text('Image Error', xPos + 10, yPos + 30);
               xPos += 55;
@@ -292,6 +311,18 @@ export default function SupervisorDashboard() {
       
       doc.save(`grandproof-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
       toast.success('Report generated with images!', { id: 'pdf' });
+
+      // Record the report artefact and advance capture states (fire-and-forget).
+      if (embeddedCaptureIds.length > 0) {
+        fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_ids: embeddedCaptureIds }),
+        }).then((r) => {
+          if (!r.ok) console.warn('[report:record:failed]', r.status);
+          else console.info('[report:record:ok]', { count: embeddedCaptureIds.length });
+        }).catch((e) => console.warn('[report:record:error]', e));
+      }
     } catch (err) {
       console.error(err);
       toast.error('Failed to generate report.', { id: 'pdf' });

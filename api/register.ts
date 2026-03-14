@@ -56,7 +56,26 @@ export default async function handler(req: any, res: any) {
       return serverError(res, insertError);
     }
 
-    return res.status(200).json({ user: { id, name, email, role: 'worker' } });
+    let workspaceId = 'ws-default';
+    const { data: membershipRows, error: membershipLookupError } = await supabase
+      .from('workspace_memberships')
+      .select('workspace_id')
+      .eq('status', 'active')
+      .limit(1);
+
+    if (!membershipLookupError && membershipRows?.[0]?.workspace_id) {
+      workspaceId = membershipRows[0].workspace_id;
+    }
+
+    await supabase.from('workspace_memberships').insert({
+      id: randomUUID(),
+      workspace_id: workspaceId,
+      user_id: id,
+      role: 'worker',
+      status: 'active',
+    }).then(() => null, () => null);
+
+    return res.status(200).json({ user: { id, name, email, role: 'worker', workspace_id: workspaceId } });
   } catch (error) {
     if (error instanceof ValidationError) {
       return badRequest(res, error.message);

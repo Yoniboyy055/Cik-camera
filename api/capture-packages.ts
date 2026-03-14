@@ -4,6 +4,7 @@ import { badRequest, methodNotAllowed, readBody, serverError } from './_lib/http
 import { enforceRateLimit } from './_lib/rateLimit.js';
 import { getSupabaseAdmin } from './_lib/supabaseAdmin.js';
 import { asObject, optionalString, ValidationError } from './_lib/validation.js';
+import { canActOnProject, resolveWorkspaceContext } from './_lib/workspace.js';
 
 interface CreatePackageBody {
   user_id?: string;
@@ -35,6 +36,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const supabase = getSupabaseAdmin();
+    const workspace = await resolveWorkspaceContext(supabase, session);
     const body = asObject(readBody<CreatePackageBody>(req));
     const customProjectName = normalizeNullableText(
       optionalString(body.custom_project_name, 'custom_project_name', { allowNull: true }) ?? null,
@@ -49,10 +51,29 @@ export default async function handler(req: any, res: any) {
       return badRequest(res, 'either project_id or custom_project_name is required');
     }
 
+    if (projectId) {
+      const { data: project } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('id', projectId)
+        .eq('workspace_id', workspace.workspaceId)
+        .maybeSingle();
+
+      if (!project) {
+        return badRequest(res, 'project_id not found in active workspace');
+      }
+
+      const allowed = await canActOnProject(supabase, workspace, projectId);
+      if (!allowed) {
+        return badRequest(res, 'You are not assigned to this project');
+      }
+    }
+
     const id = randomUUID();
 
     const { error } = await supabase.from('capture_packages').insert({
       id,
+      workspace_id: workspace.workspaceId,
       user_id: session.id,
       project_id: projectId,
       custom_project_name: customProjectName,

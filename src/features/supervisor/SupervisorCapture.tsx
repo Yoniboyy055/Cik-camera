@@ -5,6 +5,7 @@ import { ArrowLeft, Camera, RotateCcw, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../../store/auth';
 import { sha256Blob } from '../../offline/evidence';
+import { dataUrlToBlob, uploadEvidenceBlob } from '../../lib/signedUpload';
 
 const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: { ideal: 'environment' },
@@ -28,15 +29,6 @@ export default function SupervisorCapture() {
 
   const handleRetake = () => setCapturedImage(null);
 
-  const dataUrlToBlob = (dataUrl: string): Blob => {
-    const [header, data] = dataUrl.split(',');
-    const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
-    const binary = atob(data);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mime });
-  };
-
   const handleSubmit = async () => {
     if (!capturedImage) return;
     setUploading(true);
@@ -49,8 +41,9 @@ export default function SupervisorCapture() {
         });
       });
 
-      const imageBlob = dataUrlToBlob(capturedImage);
+      const imageBlob = await dataUrlToBlob(capturedImage);
       const evidenceSha256 = await sha256Blob(imageBlob);
+      const upload = await uploadEvidenceBlob(imageBlob, null);
 
       const res = await fetch('/api/captures', {
         method: 'POST',
@@ -63,7 +56,8 @@ export default function SupervisorCapture() {
           gps_accuracy_m: geo?.coords.accuracy ?? null,
           evidence_sha256: evidenceSha256,
           capture_source: 'supervisor',
-          photo_data: capturedImage,
+          storage_path: upload.storagePath,
+          photo_url: upload.publicUrl,
         }),
       });
       if (!res.ok) throw new Error(await res.text());

@@ -7,19 +7,39 @@ create table if not exists users (
   created_at timestamptz default now()
 );
 
+create table if not exists workspaces (
+  id text primary key,
+  name text not null,
+  slug text unique,
+  created_at timestamptz default now()
+);
+
+create table if not exists workspace_memberships (
+  id text primary key,
+  workspace_id text not null references workspaces(id) on delete cascade,
+  user_id text not null references users(id) on delete cascade,
+  role text not null,
+  status text not null default 'active',
+  created_at timestamptz default now(),
+  unique (workspace_id, user_id)
+);
+
 create table if not exists projects (
   id text primary key,
+  workspace_id text references workspaces(id),
   name text
 );
 
 create table if not exists task_templates (
   id text primary key,
+  workspace_id text references workspaces(id),
   name text,
   active boolean default true
 );
 
 create table if not exists task_template_requirements (
   id text primary key,
+  workspace_id text references workspaces(id),
   task_template_id text references task_templates(id),
   label text,
   capture_type text,
@@ -29,6 +49,7 @@ create table if not exists task_template_requirements (
 
 create table if not exists capture_packages (
   id text primary key,
+  workspace_id text references workspaces(id),
   user_id text references users(id),
   project_id text references projects(id),
   task_template_id text references task_templates(id),
@@ -38,6 +59,7 @@ create table if not exists capture_packages (
 
 create table if not exists captures (
   id text primary key,
+  workspace_id text references workspaces(id),
   package_id text references capture_packages(id),
   requirement_id text references task_template_requirements(id),
   user_id text references users(id),
@@ -52,6 +74,8 @@ create table if not exists captures (
   address text,
   evidence_sha256 text,
   capture_source text default 'worker',
+  storage_path text,
+  report_state text default 'metadata_saved',
   photo_url text,
   custom_project_name text,
   custom_task_text text,
@@ -65,6 +89,17 @@ values
   ('u2', 'Sam Supervisor', 'supervisor1@grandproof.local', 'supervisor', 'password')
 on conflict (id) do nothing;
 
+insert into workspaces (id, name, slug)
+values
+  ('ws-default', 'Default Workspace', 'default')
+on conflict (id) do nothing;
+
+insert into workspace_memberships (id, workspace_id, user_id, role, status)
+values
+  ('wm-u1', 'ws-default', 'u1', 'worker', 'active'),
+  ('wm-u2', 'ws-default', 'u2', 'supervisor', 'active')
+on conflict (workspace_id, user_id) do nothing;
+
 insert into projects (id, name)
 values
   ('p1', 'Downtown Fibre Upgrade'),
@@ -73,6 +108,10 @@ values
   ('p4', 'Emergency Line Repair'),
   ('p5', 'Commercial Cable Run')
 on conflict (id) do nothing;
+
+update projects
+set workspace_id = 'ws-default'
+where workspace_id is null;
 
 insert into task_templates (id, name, active)
 values
@@ -85,6 +124,10 @@ values
   ('temp7', 'Emergency Repair Verification', true),
   ('temp8', 'Aerial Strand & Lash', true)
 on conflict (id) do nothing;
+
+update task_templates
+set workspace_id = 'ws-default'
+where workspace_id is null;
 
 insert into task_template_requirements (id, task_template_id, label, capture_type, required_order, is_required)
 values
@@ -101,6 +144,12 @@ values
   ('req11', 'temp7', 'Repair before state', 'detail', 1, true),
   ('req12', 'temp7', 'Repair after state', 'detail', 2, true)
 on conflict (id) do nothing;
+
+update task_template_requirements r
+set workspace_id = t.workspace_id
+from task_templates t
+where r.task_template_id = t.id
+  and r.workspace_id is null;
 
 -- Run once in Supabase SQL editor before production use:
 -- insert into storage.buckets (id, name, public) values ('captures', 'captures', true)

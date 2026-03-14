@@ -9,6 +9,7 @@ export interface SessionUser {
   name: string;
   email: string;
   role: string;
+  workspace_id?: string;
 }
 
 interface SessionPayload extends SessionUser {
@@ -111,7 +112,13 @@ export function readSession(req: any): SessionUser | null {
     const payload = JSON.parse(base64UrlDecode(body)) as SessionPayload;
     if (!payload?.id || !payload?.email || !payload?.role || !payload?.name) return null;
     if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
-    return { id: payload.id, name: payload.name, email: payload.email, role: payload.role };
+    return {
+      id: payload.id,
+      name: payload.name,
+      email: payload.email,
+      role: payload.role,
+      workspace_id: typeof payload.workspace_id === 'string' && payload.workspace_id ? payload.workspace_id : undefined,
+    };
   } catch {
     return null;
   }

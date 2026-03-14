@@ -4,6 +4,7 @@ import { enforceRateLimit } from './_lib/rateLimit.js';
 import { getSupabaseAdmin } from './_lib/supabaseAdmin.js';
 import { asObject, requiredEmail, requiredString, ValidationError } from './_lib/validation.js';
 import { verifyPassword } from './_lib/auth.js';
+import { resolveWorkspaceContext } from './_lib/workspace.js';
 
 interface LoginBody {
   email?: string;
@@ -51,7 +52,20 @@ export default async function handler(req: any, res: any) {
         .eq('id', user.id);
     }
 
-    const sessionUser = { id: user.id, name: user.name, email: user.email, role: user.role };
+    const workspace = await resolveWorkspaceContext(supabase, {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+
+    const sessionUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: workspace.role,
+      workspace_id: workspace.workspaceId,
+    };
     setSessionCookie(res, sessionUser);
 
     return res.status(200).json({ user: sessionUser });

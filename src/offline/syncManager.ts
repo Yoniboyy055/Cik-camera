@@ -5,6 +5,7 @@
  */
 
 import { offlineDB, OutboxOp } from './db';
+import { uploadEvidenceBlob } from '../lib/signedUpload';
 
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 3000;
@@ -59,14 +60,6 @@ async function uploadCapture(captureId: string): Promise<void> {
   const blob = await offlineDB.getBlob(capture.blob_id);
   if (!blob) throw new Error(`Blob ${capture.blob_id} not found in IDB`);
 
-  // Convert Blob back to base64 data URL
-  const photoData = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob.blob);
-  });
-
   // Resolve the effective package ID: use the server-assigned remote ID so
   // the capture lands in the correct package instead of being nulled out by
   // the api/captures.ts local-* guard.
@@ -79,6 +72,8 @@ async function uploadCapture(captureId: string): Promise<void> {
       throw new Error(`Package ${capture.package_id} not yet synced — deferring capture`);
     }
   }
+
+  const upload = await uploadEvidenceBlob(blob.blob, resolvedPackageId);
 
   const resp = await fetch('/api/captures', {
     method: 'POST',
@@ -98,7 +93,8 @@ async function uploadCapture(captureId: string): Promise<void> {
       address: capture.address,
       evidence_sha256: capture.evidence_sha256,
       capture_source: 'worker',
-      photo_data: photoData,
+      storage_path: upload.storagePath,
+      photo_url: upload.publicUrl,
     }),
   });
 

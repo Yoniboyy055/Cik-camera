@@ -9,6 +9,7 @@ import imageCompression from 'browser-image-compression';
 import { offlineDB, type OfflinePackage, type OfflineCapture, type OfflineBlob } from '../offline/db';
 import { enqueueCreatePackage, enqueueCreateCapture } from '../offline/syncManager';
 import { sha256Blob } from '../offline/evidence';
+import { uploadEvidenceBlob } from '../lib/signedUpload';
 
 const GPS_OPTIONS: Record<string, PositionOptions> = {
   low:    { enableHighAccuracy: false, maximumAge: 60_000, timeout: 3_000 },
@@ -543,12 +544,8 @@ export default function CaptureFlow() {
           initialQuality: 0.95
         });
         
-        const reader = new FileReader();
-        const compressedBase64 = await new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(compressedFile);
-        });
         const evidenceSha256 = await sha256Blob(compressedFile);
+        const upload = await uploadEvidenceBlob(compressedFile, packageId.startsWith('local-') ? null : packageId);
 
         const res = await fetch('/api/captures', {
           method: 'POST',
@@ -567,7 +564,8 @@ export default function CaptureFlow() {
             altitude_m: location?.altitude ?? null,
             address,
             evidence_sha256: evidenceSha256,
-            photo_data: compressedBase64
+            storage_path: upload.storagePath,
+            photo_url: upload.publicUrl,
           }),
         });
         if (!res.ok) throw new Error(`Capture upload failed: HTTP ${res.status} ${await res.text()}`);

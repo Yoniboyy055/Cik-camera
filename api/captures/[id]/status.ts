@@ -3,6 +3,7 @@ import { badRequest, methodNotAllowed, readBody, serverError } from '../../_lib/
 import { enforceRateLimit } from '../../_lib/rateLimit.js';
 import { getSupabaseAdmin } from '../../_lib/supabaseAdmin.js';
 import { asObject, optionalEnum, ValidationError } from '../../_lib/validation.js';
+import { resolveWorkspaceContext } from '../../_lib/workspace.js';
 
 interface StatusBody {
   status?: string;
@@ -19,7 +20,7 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const session = requireSession(req, res, ['supervisor']);
+  const session = requireSession(req, res, ['supervisor', 'admin', 'owner']);
   if (!session) {
     return;
   }
@@ -33,6 +34,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const supabase = getSupabaseAdmin();
+    const workspace = await resolveWorkspaceContext(supabase, session);
     const body = asObject(readBody<StatusBody>(req));
     const status = optionalEnum(body.status, 'status', ALLOWED_STATUSES);
 
@@ -44,6 +46,7 @@ export default async function handler(req: any, res: any) {
       .from('captures')
       .update({ status })
       .eq('id', id)
+      .eq('workspace_id', workspace.workspaceId)
       .select('id');
 
     if (captureError) {
@@ -57,7 +60,8 @@ export default async function handler(req: any, res: any) {
     const { error: packageError } = await supabase
       .from('capture_packages')
       .update({ status })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('workspace_id', workspace.workspaceId);
 
     if (packageError) {
       return serverError(res, packageError);
@@ -66,7 +70,8 @@ export default async function handler(req: any, res: any) {
     const { error: packageCapturesError } = await supabase
       .from('captures')
       .update({ status })
-      .eq('package_id', id);
+      .eq('package_id', id)
+      .eq('workspace_id', workspace.workspaceId);
 
     if (packageCapturesError) {
       return serverError(res, packageCapturesError);

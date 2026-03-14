@@ -3,6 +3,7 @@ import { badRequest, forbidden, methodNotAllowed, readBody, serverError } from '
 import { enforceRateLimit } from '../../_lib/rateLimit.js';
 import { getSupabaseAdmin } from '../../_lib/supabaseAdmin.js';
 import { asObject, optionalEnum, optionalString, ValidationError } from '../../_lib/validation.js';
+import { resolveWorkspaceContext } from '../../_lib/workspace.js';
 
 interface StatusBody {
   status?: string;
@@ -37,6 +38,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const supabase = getSupabaseAdmin();
+    const workspace = await resolveWorkspaceContext(supabase, session);
     const body = asObject(readBody<StatusBody>(req));
     const status = optionalEnum(body.status, 'status', ALLOWED_STATUSES);
 
@@ -47,21 +49,24 @@ export default async function handler(req: any, res: any) {
     // Fetch previous status for the audit log
     const { data: prevRow } = await supabase
       .from('capture_packages')
-      .select('status, user_id')
+      .select('status, user_id, workspace_id')
       .eq('id', packageId)
+      .eq('workspace_id', workspace.workspaceId)
       .maybeSingle();
 
     if (!prevRow) {
       return badRequest(res, 'Package not found');
     }
 
-    if (session.role !== 'supervisor' && prevRow.user_id !== session.id) {
+    if (workspace.role !== 'supervisor' && workspace.role !== 'admin' && workspace.role !== 'owner' && prevRow.user_id !== session.id) {
       return forbidden(res, 'You do not have access to this package');
     }
 
     const workerAllowed = new Set(['in_progress', 'submitted']);
     const supervisorAllowed = new Set(['approved', 'rejected', 'submitted', 'in_progress']);
-    const allowedForRole = session.role === 'supervisor' ? supervisorAllowed : workerAllowed;
+    const allowedForRole = workspace.role === 'supervisor' || workspace.role === 'admin' || workspace.role === 'owner'
+      ? supervisorAllowed
+      : workerAllowed;
     if (!allowedForRole.has(status)) {
       return forbidden(res, `Role ${session.role} cannot set package status to ${status}`);
     }
@@ -75,7 +80,8 @@ export default async function handler(req: any, res: any) {
     const { error: packageError } = await supabase
       .from('capture_packages')
       .update(packageUpdate)
-      .eq('id', packageId);
+      .eq('id', packageId)
+      .eq('workspace_id', workspace.workspaceId);
 
     if (packageError) {
       return serverError(res, packageError);
@@ -84,7 +90,8 @@ export default async function handler(req: any, res: any) {
     const { error: capturesError } = await supabase
       .from('captures')
       .update({ status })
-      .eq('package_id', packageId);
+      .eq('package_id', packageId)
+      .eq('workspace_id', workspace.workspaceId);
 
     if (capturesError) {
       return serverError(res, capturesError);
@@ -93,6 +100,7 @@ export default async function handler(req: any, res: any) {
     // Write audit log row (best-effort — non-fatal if table not yet migrated)
     await supabase.from('capture_audit_log').insert({
       package_id: packageId,
+      workspace_id: workspace.workspaceId,
       actor_id: session.id,
       actor_name: session.name,
       from_status: prevRow?.status ?? null,
