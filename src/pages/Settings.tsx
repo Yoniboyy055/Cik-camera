@@ -7,12 +7,9 @@ export default function Settings() {
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
 
-  const [sunlightMode, setSunlightMode] = useState(() => {
-    // Migrate legacy key
-    const legacy = localStorage.getItem('cik_sunlight_mode');
-    if (legacy !== null) { localStorage.setItem('gp_sunlight_mode', legacy); localStorage.removeItem('cik_sunlight_mode'); }
-    return localStorage.getItem('gp_sunlight_mode') === 'true';
-  });
+  const [sunlightMode, setSunlightMode] = useState(
+    () => localStorage.getItem('gp_sunlight_mode') === 'true',
+  );
   const [notifications, setNotifications] = useState(
     () => localStorage.getItem('gp_notifications') !== 'false',
   );

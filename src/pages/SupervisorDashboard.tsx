@@ -15,11 +15,12 @@ import { downloadEvidenceBundle, makeEvidenceAvailableOffline } from '../feature
 // ─── Rejection reason modal ───────────────────────────────────────────────────
 
 const REJECTION_CODES = [
-  { code: 'blurry', label: 'Photo is blurry or unclear' },
-  { code: 'incomplete', label: 'Missing required shots' },
+  { code: 'poor_photo', label: 'Photo quality is insufficient' },
   { code: 'wrong_location', label: 'Wrong location / site mismatch' },
-  { code: 'no_measurement', label: 'Measurement not visible' },
-  { code: 'other', label: 'Other (describe below)' },
+  { code: 'duplicate_capture', label: 'Duplicate capture detected' },
+  { code: 'wrong_task', label: 'Capture does not match task scope' },
+  { code: 'invalid_metadata', label: 'Metadata is incomplete or invalid' },
+  { code: 'safety_issue', label: 'Safety issue observed' },
 ];
 
 function RejectionModal({
@@ -236,7 +237,7 @@ export default function SupervisorDashboard() {
       
       doc.setFontSize(22);
       doc.setTextColor(16, 185, 129); // emerald-500
-      doc.text(`GrandProof Daily Report`, 14, 22);
+      doc.text(`GrandProof Daily Site Report`, 14, 22);
       
       doc.setFontSize(12);
       doc.setTextColor(100, 116, 139); // slate-500
@@ -289,7 +290,7 @@ export default function SupervisorDashboard() {
         yPos += 15;
       }
       
-      doc.save(`GrandProof_Daily_Report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      doc.save(`grandproof-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
       toast.success('Report generated with images!', { id: 'pdf' });
     } catch (err) {
       console.error(err);

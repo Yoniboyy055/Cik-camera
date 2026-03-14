@@ -14,12 +14,7 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: (() => {
-    // Migrate legacy cik_user key to gp_user
-    const legacy = localStorage.getItem('cik_user');
-    if (legacy) { localStorage.setItem('gp_user', legacy); localStorage.removeItem('cik_user'); }
-    return JSON.parse(localStorage.getItem('gp_user') || 'null');
-  })(),
+  user: JSON.parse(localStorage.getItem('gp_user') || 'null'),
   login: (user) => {
     localStorage.setItem('gp_user', JSON.stringify(user));
     set({ user });

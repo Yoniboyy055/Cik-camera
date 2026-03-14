@@ -20,7 +20,7 @@ interface Message {
 export default function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'model', text: 'Hello! I am the CIK Assistant. How can I help you today? You can ask me questions or upload a proof photo for analysis.' }
+    { id: '1', role: 'model', text: 'Hello! I am the GrandProof Assistant. How can I help you today? You can ask me questions or upload an evidence photo for analysis.' }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -152,7 +152,7 @@ export default function Chatbot() {
                 <BrainCircuit className="w-4 h-4 text-brand-primary" />
               </div>
               <div>
-                <h3 className="font-bold text-sm">CIK Assistant</h3>
+                <h3 className="font-bold text-sm">GrandProof Assistant</h3>
                 <p className="text-[10px] text-brand-text-muted">Powered by Gemini 3.1 Pro</p>
               </div>
             </div>

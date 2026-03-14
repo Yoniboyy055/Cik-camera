@@ -12,7 +12,11 @@ interface CreateCaptureBody {
   unit?: string;
   latitude?: number;
   longitude?: number;
+  gps_accuracy_m?: number;
+  altitude_m?: number;
   address?: string;
+  evidence_sha256?: string;
+  capture_source?: 'worker' | 'supervisor';
   photo_data?: string;
 }
 
@@ -166,7 +170,11 @@ export default async function handler(req: any, res: any) {
         unit: normalizeNullableText(body.unit),
         latitude: body.latitude || null,
         longitude: body.longitude || null,
+        gps_accuracy_m: body.gps_accuracy_m || null,
+        altitude_m: body.altitude_m || null,
         address: normalizeNullableText(body.address),
+        evidence_sha256: normalizeNullableText(body.evidence_sha256),
+        capture_source: body.capture_source === 'supervisor' ? 'supervisor' : 'worker',
         photo_url: photoUrl,
         status: 'uploaded',
       });

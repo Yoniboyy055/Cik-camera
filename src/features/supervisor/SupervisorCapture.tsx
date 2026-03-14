@@ -4,6 +4,7 @@ import Webcam from 'react-webcam';
 import { ArrowLeft, Camera, RotateCcw, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../../store/auth';
+import { sha256Blob } from '../../offline/evidence';
 
 const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: { ideal: 'environment' },
@@ -48,16 +49,23 @@ export default function SupervisorCapture() {
         });
       });
 
-      const formData = new FormData();
-      formData.append('photo', dataUrlToBlob(capturedImage), 'supervisor_capture.jpg');
-      formData.append('capture_source', 'supervisor');
-      if (note.trim()) formData.append('note', note.trim());
-      if (geo) {
-        formData.append('latitude', String(geo.coords.latitude));
-        formData.append('longitude', String(geo.coords.longitude));
-      }
+      const imageBlob = dataUrlToBlob(capturedImage);
+      const evidenceSha256 = await sha256Blob(imageBlob);
 
-      const res = await fetch('/api/captures', { method: 'POST', body: formData });
+      const res = await fetch('/api/captures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user?.id,
+          note: note.trim() || null,
+          latitude: geo?.coords.latitude ?? null,
+          longitude: geo?.coords.longitude ?? null,
+          gps_accuracy_m: geo?.coords.accuracy ?? null,
+          evidence_sha256: evidenceSha256,
+          capture_source: 'supervisor',
+          photo_data: capturedImage,
+        }),
+      });
       if (!res.ok) throw new Error(await res.text());
 
       toast.success('Supervisor capture uploaded!', { id: 'sv-upload' });
@@ -100,7 +108,7 @@ export default function SupervisorCapture() {
 
         {/* Watermark */}
         <div className="absolute bottom-4 left-4 bg-black/50 px-3 py-1.5 rounded-lg backdrop-blur-sm pointer-events-none">
-          <p className="text-white text-xs font-semibold tracking-wide">GrandProof · Supervisor</p>
+          <p className="text-white text-xs font-semibold tracking-wide">GRANDPROOF VERIFIED CAPTURE</p>
         </div>
 
         {/* Retake button when image captured */}

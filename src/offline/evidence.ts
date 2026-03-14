@@ -11,8 +11,8 @@ function bufToHex(buf: ArrayBuffer): string {
     .join('');
 }
 
-/** SHA-256 of a Uint8Array (or ArrayBuffer). Returns hex string. */
-export async function sha256Hex(data: Uint8Array | ArrayBuffer): Promise<string> {
+/** SHA-256 of a BufferSource. Returns hex string. */
+export async function sha256Hex(data: BufferSource): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', data);
   return bufToHex(buf);
 }

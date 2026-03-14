@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/auth';
-import { Camera } from 'lucide-react';
+import BrandHeader from '../components/brand/BrandHeader';
 
 export default function Login() {
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
@@ -104,13 +104,7 @@ export default function Login() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-brand-bg px-4">
       <div className="w-full max-w-md bg-brand-surface rounded-2xl shadow-xl p-8 border border-brand-border">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-brand-primary rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-brand-primary/20">
-            <Camera className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-brand-text">GrandProof</h1>
-          <p className="text-brand-text-muted text-sm mt-1">
-            {mode === 'signin' ? 'Sign in to your account' : 'Create a new account'}
-          </p>
+          <BrandHeader compact subtitle={mode === 'signin' ? 'Sign in to your account' : 'Create a new account'} />
         </div>
 
         {/* Toggle */}
@@ -154,7 +148,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className={inputClass}
-                placeholder="worker@cik.com or supervisor@cik.com"
+                placeholder="worker1@grandproof.local or supervisor1@grandproof.local"
                 required
               />
             </div>
@@ -236,8 +230,8 @@ export default function Login() {
         {mode === 'signin' && (
           <div className="mt-6 text-center text-xs text-brand-text-muted">
             <p>Demo Accounts:</p>
-            <p>worker@cik.com / password</p>
-            <p>supervisor@cik.com / password</p>
+            <p>worker1@grandproof.local / password</p>
+            <p>supervisor1@grandproof.local / password</p>
           </div>
         )}
       </div>

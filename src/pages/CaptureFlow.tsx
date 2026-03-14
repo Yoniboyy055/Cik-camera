@@ -2,10 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { useAuthStore } from '../store/auth';
-import { Camera, MapPin, CheckCircle, ArrowLeft, Loader2, RefreshCw, UploadCloud, Timer, Grid3X3, Copy, Mic, MicOff, Ruler, FileText, Image as ImageIcon, Zap, ListChecks, Navigation, SwitchCamera, ZoomIn, ZoomOut, X as XIcon } from 'lucide-react';
+import { Camera, MapPin, CheckCircle, ArrowLeft, Loader2, RefreshCw, UploadCloud, Timer, Grid3X3, Copy, Mic, MicOff, Ruler, FileText, Image as ImageIcon, Zap, ListChecks, Navigation, SwitchCamera, ZoomIn, ZoomOut, X as XIcon, WifiOff } from 'lucide-react';
 import { format } from 'date-fns';
 import Map3D from '../components/Map3D';
 import imageCompression from 'browser-image-compression';
+import { offlineDB, type OfflinePackage, type OfflineCapture, type OfflineBlob } from '../offline/db';
+import { enqueueCreatePackage, enqueueCreateCapture } from '../offline/syncManager';
+import { sha256Blob } from '../offline/evidence';
 
 const GPS_OPTIONS: Record<string, PositionOptions> = {
   low:    { enableHighAccuracy: false, maximumAge: 60_000, timeout: 3_000 },
@@ -239,30 +242,30 @@ export default function CaptureFlow() {
     // --- Top Info Card ---
     drawGlassCard(padding, padding, topCardW, topCardH);
     
-    // GrandProof Title
-    ctx.fillStyle = '#34d399'; // emerald-400
-    ctx.font = 'bold 36px sans-serif';
-    ctx.fillText('GrandProof', padding + 40, padding + 60);
+    // Approved evidence header format
+    ctx.fillStyle = '#34d399';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText('GRANDPROOF VERIFIED CAPTURE', padding + 40, padding + 60);
 
     // Project Name
     ctx.fillStyle = 'white';
-    ctx.font = 'bold 48px sans-serif';
+    ctx.font = 'bold 42px sans-serif';
     const projectName = projects.find(p => p.id === projectId)?.name || manualProjectName || 'Unknown Project';
     ctx.fillText(`Project: ${projectName}`, padding + 40, padding + 130);
 
     // Task Name
     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.font = '36px sans-serif';
+    ctx.font = '32px sans-serif';
     const templateName = templates.find(t => t.id === templateId)?.name || manualTemplateName || 'Quick Capture';
     const reqLabel = requirements.find(r => r.id === currentRequirementId)?.label || '';
-    ctx.fillText(`${templateName}: ${reqLabel}`, padding + 40, padding + 180);
+    ctx.fillText(`Task: ${templateName}${reqLabel ? ` - ${reqLabel}` : ''}`, padding + 40, padding + 178);
 
     // Date/Time (Top Right)
     ctx.fillStyle = 'white';
-    ctx.font = 'bold 36px monospace';
+    ctx.font = 'bold 30px monospace';
     ctx.textAlign = 'right';
     const dateStr = format(new Date(), 'MMM d, yyyy h:mm a');
-    ctx.fillText(dateStr, canvas.width - padding - 40, padding + 60);
+    ctx.fillText(`Time: ${dateStr}`, canvas.width - padding - 40, padding + 60);
     ctx.textAlign = 'left';
 
     // --- Bottom Info Card ---
@@ -271,22 +274,23 @@ export default function CaptureFlow() {
 
     // Location Address
     ctx.fillStyle = 'white';
-    ctx.font = 'bold 44px sans-serif';
-    ctx.fillText(`📍 ${address}`, padding + 40, bottomY + 70);
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText(`Worker: ${user?.name ?? 'Unknown'}`, padding + 40, bottomY + 62);
 
-    // GPS Coordinates
+    // GPS Coordinates + accuracy
     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.font = '36px monospace';
+    ctx.font = '28px monospace';
     const latStr = location?.lat.toFixed(7) || '0.0000000';
     const lngStr = location?.lng.toFixed(7) || '0.0000000';
     const accStr = location?.accuracy ? `±${location.accuracy.toFixed(1)}m` : '';
-    ctx.fillText(`${latStr}, ${lngStr} ${accStr}`, padding + 40, bottomY + 130);
+    ctx.fillText(`GPS: ${latStr}, ${lngStr}`, padding + 40, bottomY + 112);
+    ctx.fillText(`Accuracy: ${accStr || 'n/a'}`, padding + 40, bottomY + 152);
 
-    // Worker Name & Measurement
+    // Capture ID
     ctx.fillStyle = 'white';
-    ctx.font = '36px sans-serif';
-    const measurementStr = measurement ? ` | 📏 ${measurement}${unit}` : '';
-    ctx.fillText(`Worker: ${user?.name}${measurementStr}`, padding + 40, bottomY + 180);
+    ctx.font = '28px sans-serif';
+    const captureStampId = `GP-${packageId ? packageId.slice(0, 8) : 'LOCAL'}-${Date.now().toString().slice(-6)}`;
+    ctx.fillText(`Capture ID: ${captureStampId}`, padding + 40, bottomY + 192);
 
     // --- Map Snapshot (Bottom Right) ---
     const mapSize = 180;
@@ -439,7 +443,7 @@ export default function CaptureFlow() {
     if (saveToGallery) {
       const link = document.createElement('a');
       link.href = photoData;
-      link.download = `CIK_Proof_${format(new Date(), 'yyyyMMdd_HHmmss')}.jpg`;
+      link.download = `grandproof-capture-${format(new Date(), 'yyyyMMdd-HHmmss')}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -457,6 +461,76 @@ export default function CaptureFlow() {
 
   const handleUpload = async () => {
     setStep('uploading');
+
+    // ── Offline path ──────────────────────────────────────────────────────────
+    if (!navigator.onLine || packageId.startsWith('local-')) {
+      try {
+        const localPkgId = packageId.startsWith('local-') ? packageId : `local-${crypto.randomUUID()}`;
+
+        const offlinePkg: OfflinePackage = {
+          package_id: localPkgId,
+          user_id: user?.id ?? '',
+          project_id: projectId || null,
+          custom_project_name: projectId ? null : manualProjectName || null,
+          task_template_id: templateId || null,
+          custom_task_text: templateId ? null : manualTemplateName || null,
+          status: 'pending',
+          sync_state: 'queued',
+          created_at: new Date().toISOString(),
+        };
+        await offlineDB.savePackage(offlinePkg);
+        await enqueueCreatePackage(localPkgId);
+
+        for (const [reqId, photo] of Object.entries(capturedPhotos)) {
+          const rawBlob = await (await fetch(photo.data)).blob();
+          const sha256 = await sha256Blob(rawBlob);
+          const captureId = `cap-${crypto.randomUUID()}`;
+          const blobId = `blob-${crypto.randomUUID()}`;
+
+          const offlineBlob: OfflineBlob = {
+            blob_id: blobId,
+            package_id: localPkgId,
+            capture_id: captureId,
+            blob: rawBlob,
+            mime: 'image/jpeg',
+            bytes: rawBlob.size,
+          };
+          await offlineDB.saveBlob(offlineBlob);
+
+          const offlineCap: OfflineCapture = {
+            capture_id: captureId,
+            package_id: localPkgId,
+            blob_id: blobId,
+            user_id: user?.id ?? '',
+            project_id: projectId || null,
+            requirement_id: reqId === 'quick-capture' ? null : reqId,
+            note: photo.note || null,
+            measurement: photo.measurement || null,
+            unit: photo.unit || null,
+            latitude: location?.lat ?? null,
+            longitude: location?.lng ?? null,
+            gps_accuracy_m: location?.accuracy ?? null,
+            altitude_m: location?.altitude ?? null,
+            address: address || null,
+            evidence_sha256: sha256,
+            sync_state: 'queued',
+            captured_at: new Date().toISOString(),
+          };
+          await offlineDB.saveCapture(offlineCap);
+          await enqueueCreateCapture(captureId);
+        }
+
+        setStep('success');
+        return;
+      } catch (err) {
+        console.error('Offline save failed:', err);
+        alert('Failed to save offline. Please try again.');
+        setStep('checklist');
+        return;
+      }
+    }
+
+    // ── Online path ───────────────────────────────────────────────────────────
     try {
       // Upload each photo in the package
       const uploadPromises = Object.entries(capturedPhotos).map(async ([reqId, photo]) => {
@@ -474,6 +548,7 @@ export default function CaptureFlow() {
           reader.onloadend = () => resolve(reader.result as string);
           reader.readAsDataURL(compressedFile);
         });
+        const evidenceSha256 = await sha256Blob(compressedFile);
 
         return fetch('/api/captures', {
           method: 'POST',
@@ -489,6 +564,7 @@ export default function CaptureFlow() {
             latitude: location?.lat,
             longitude: location?.lng,
             address,
+            evidence_sha256: evidenceSha256,
             photo_data: compressedBase64
           }),
         });
@@ -530,7 +606,7 @@ export default function CaptureFlow() {
           {step === 'checklist' && 'Proof Checklist'}
           {step === 'camera' && 'Capture Proof'}
           {step === 'review' && 'Review Capture'}
-          {step === 'uploading' && 'Uploading Package...'}
+          {step === 'uploading' && (navigator.onLine ? 'Uploading Package...' : 'Saving Offline...')}
           {step === 'success' && 'Success'}
         </h1>
         {step === 'camera' && (
@@ -648,12 +724,18 @@ export default function CaptureFlow() {
             </div>
 
             <div className="pt-4">
+              {!isOnline && (
+                <div className="flex items-center gap-2 mb-3 text-yellow-400 text-xs bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+                  <WifiOff className="w-4 h-4 shrink-0" />
+                  Offline — capture will be saved locally and synced when you reconnect.
+                </div>
+              )}
               <button
                 onClick={handleUpload}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/50"
               >
-                <UploadCloud className="w-5 h-5" />
-                Finalize & Upload Package
+                {isOnline ? <UploadCloud className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
+                {isOnline ? 'Finalize & Upload Package' : 'Save Offline'}
               </button>
               <p className="text-center text-xs text-white/30 mt-4 italic">
                 You can upload even if some items are missing.

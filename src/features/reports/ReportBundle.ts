@@ -61,6 +61,9 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
 export async function downloadEvidenceBundle(pkg: BundlePackage): Promise<void> {
   const manifest: Record<string, unknown> = {
     grandproof_version: '2.0',
+    product_name: 'GrandProof',
+    descriptor: 'Verified Field Evidence Platform',
+    tagline: 'Capture. Verify. Prove.',
     generated_at: new Date().toISOString(),
     package_id: pkg.id,
     project: pkg.project_name,
@@ -91,7 +94,7 @@ export async function downloadEvidenceBundle(pkg: BundlePackage): Promise<void> 
   const a = document.createElement('a');
   a.href = url;
   const date = new Date().toISOString().slice(0, 10);
-  a.download = `GrandProof_Evidence_${pkg.id.slice(0, 8)}_${date}.json`;
+  a.download = `grandproof-evidence-${pkg.id.slice(0, 8)}-${date}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
