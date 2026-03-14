@@ -55,10 +55,36 @@ ALTER TABLE capture_audit_log   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE offline_sync_log    ENABLE ROW LEVEL SECURITY;
 
 -- auth.uid() returns UUID; cast to text to match existing text id columns.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies p
+    WHERE p.schemaname = current_schema()
+      AND p.tablename = 'capture_audit_log'
+      AND p.policyname = 'supervisors_read_audit_log'
+  ) THEN
+    EXECUTE format('DROP POLICY %I ON %I.%I', 'supervisors_read_audit_log', current_schema(), 'capture_audit_log');
+  END IF;
+END;
+$$;
+
 CREATE POLICY "supervisors_read_audit_log" ON capture_audit_log
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM users WHERE id = auth.uid()::text AND role = 'supervisor')
   );
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies p
+    WHERE p.schemaname = current_schema()
+      AND p.tablename = 'capture_audit_log'
+      AND p.policyname = 'owner_read_audit_log'
+  ) THEN
+    EXECUTE format('DROP POLICY %I ON %I.%I', 'owner_read_audit_log', current_schema(), 'capture_audit_log');
+  END IF;
+END;
+$$;
 
 CREATE POLICY "owner_read_audit_log" ON capture_audit_log
   FOR SELECT USING (
@@ -68,8 +94,34 @@ CREATE POLICY "owner_read_audit_log" ON capture_audit_log
     )
   );
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies p
+    WHERE p.schemaname = current_schema()
+      AND p.tablename = 'capture_audit_log'
+      AND p.policyname = 'insert_own_audit_log'
+  ) THEN
+    EXECUTE format('DROP POLICY %I ON %I.%I', 'insert_own_audit_log', current_schema(), 'capture_audit_log');
+  END IF;
+END;
+$$;
+
 CREATE POLICY "insert_own_audit_log" ON capture_audit_log
   FOR INSERT WITH CHECK (actor_id = auth.uid()::text);
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies p
+    WHERE p.schemaname = current_schema()
+      AND p.tablename = 'offline_sync_log'
+      AND p.policyname = 'own_sync_log'
+  ) THEN
+    EXECUTE format('DROP POLICY %I ON %I.%I', 'own_sync_log', current_schema(), 'offline_sync_log');
+  END IF;
+END;
+$$;
 
 CREATE POLICY "own_sync_log" ON offline_sync_log
   FOR ALL USING (user_id = auth.uid()::text) WITH CHECK (user_id = auth.uid()::text);

@@ -1,12 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
+import { Analytics as VercelAnalytics } from '@vercel/analytics/react';
 import { useAuthStore } from './store/auth';
 import Login from './pages/Login';
 import WorkerHome from './pages/WorkerHome';
 import CaptureFlow from './pages/CaptureFlow';
 import SupervisorDashboard from './pages/SupervisorDashboard';
 import Settings from './pages/Settings';
-import Analytics from './pages/Analytics';
+import AnalyticsPage from './pages/Analytics';
 import MyCaptures from './pages/MyCaptures';
 import OfflineQueue from './pages/OfflineQueue';
 import SupervisorCapture from './features/supervisor/SupervisorCapture';
@@ -88,7 +89,7 @@ export default function App() {
             path="/analytics"
             element={
               <ProtectedRoute>
-                <Analytics />
+                <AnalyticsPage />
               </ProtectedRoute>
             }
           />
@@ -115,6 +116,7 @@ export default function App() {
         </Routes>
 
         {user && <Chatbot />}
+        <VercelAnalytics />
       </div>
     </BrowserRouter>
   );
