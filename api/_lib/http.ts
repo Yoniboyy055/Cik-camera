@@ -4,7 +4,12 @@ export function methodNotAllowed(res: any, allowed: string[]) {
 }
 
 export function serverError(res: any, error: unknown) {
-  const message = error instanceof Error ? error.message : 'Internal server error';
+  let message = 'Internal server error';
+  if (error instanceof Error) {
+    message = error.message;
+  } else if (error !== null && typeof error === 'object' && 'message' in error) {
+    message = String((error as { message: unknown }).message);
+  }
   return res.status(500).json({ error: message });
 }
 

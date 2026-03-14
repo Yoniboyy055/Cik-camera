@@ -3,9 +3,8 @@
  * GrandProof V2 — Smoke Test
  * Usage: node scripts/smoke-v2.mjs https://cik-camera.vercel.app
  *
- * Tests the full worker flow:
- *   register → login → projects/templates → create package → upload capture
- *   (with GPS + hash fields) → patch status → verify capture appears
+ * Auth note: the current API is MVP-grade (no JWTs) – identity is conveyed by
+ * passing user_id in the request body.  The smoke test mirrors this approach.
  */
 
 import { createHash } from 'node:crypto';
@@ -25,9 +24,8 @@ function assert(label, condition, detail = '') {
   }
 }
 
-async function req(method, path, body, token) {
+async function req(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
@@ -38,7 +36,6 @@ async function req(method, path, body, token) {
   return { status: res.status, ok: res.ok, json };
 }
 
-// ─── Minimal 1×1 pixel JPEG as base64 data URL ───────────────────────────────
 const TINY_JPEG =
   'data:image/jpeg;base64,' +
   '/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof' +
@@ -48,18 +45,15 @@ const TINY_JPEG =
   'xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8A' +
   'LBAD/9k=';
 
-// SHA-256 of the raw binary behind the data URL
 function sha256OfDataUrl(dataUrl) {
   const b64 = dataUrl.split(',')[1];
   const buf = Buffer.from(b64, 'base64');
   return createHash('sha256').update(buf).digest('hex');
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 const email = `smoke+${Date.now()}@grandproof.test`;
 const password = 'Smoke!test1';
-let token;
+let userId;
 let projectId;
 let templateId;
 let packageId;
@@ -70,64 +64,62 @@ console.log(`\nGrandProof V2 Smoke Test — ${BASE}\n`);
 // 1. Register
 console.log('1. Register');
 {
-  const r = await req('POST', '/api/register', { email, password });
-  assert('HTTP 200 or 201', r.status === 200 || r.status === 201, `got ${r.status}`);
-  assert('returns token', !!r.json?.token, JSON.stringify(r.json));
-  token = r.json?.token;
+  const r = await req('POST', '/api/register', { name: 'Smoke Test', email, password });
+  assert('HTTP 200 or 201', r.status === 200 || r.status === 201, `got ${r.status} — ${JSON.stringify(r.json)}`);
+  userId = r.json?.user?.id ?? r.json?.id ?? null;
 }
 
-if (!token) {
-  // Try logging in with existing test account (idempotent re-runs)
-  console.log('  → no token from register; trying login');
+// 2. Login
+console.log('2. Login');
+{
   const r = await req('POST', '/api/login', { email, password });
-  token = r.json?.token;
+  assert('HTTP 200', r.ok, `got ${r.status} — ${JSON.stringify(r.json)}`);
+  const id = r.json?.user?.id ?? r.json?.id ?? null;
+  assert('returns user.id', !!id, JSON.stringify(r.json));
+  userId = id ?? userId;
 }
 
-if (!token) {
-  console.error(`  ${FAIL} Cannot obtain auth token — aborting`);
+if (!userId) {
+  console.error(`  ${FAIL} Cannot obtain user ID — aborting`);
   process.exit(1);
 }
 
-// 2. Health
-console.log('2. Health');
+// 3. Health
+console.log('3. Health');
 {
   const r = await req('GET', '/api/health');
   assert('HTTP 200', r.ok, `got ${r.status}`);
 }
 
-// 3. Projects
-console.log('3. Projects');
+// 4. Projects
+console.log('4. Projects');
 {
-  const r = await req('GET', '/api/projects', null, token);
+  const r = await req('GET', '/api/projects');
   assert('HTTP 200', r.ok, `got ${r.status}`);
   assert('returns array', Array.isArray(r.json), JSON.stringify(r.json));
   projectId = r.json?.[0]?.id ?? null;
   assert('at least one project', !!projectId);
 }
 
-// 4. Task templates
-console.log('4. Task templates');
+// 5. Task templates
+console.log('5. Task templates');
 {
-  const r = await req('GET', '/api/task-templates', null, token);
+  const r = await req('GET', '/api/task-templates');
   assert('HTTP 200', r.ok, `got ${r.status}`);
   assert('returns array', Array.isArray(r.json), JSON.stringify(r.json));
   templateId = r.json?.[0]?.id ?? null;
 }
 
-// 5. Create capture package
-console.log('5. Create capture package');
+// 6. Create capture package
+console.log('6. Create capture package');
 {
-  const r = await req(
-    'POST',
-    '/api/capture-packages',
-    {
-      project_id: projectId,
-      task_template_id: templateId ?? null,
-      custom_task_text: 'Smoke test task',
-    },
-    token,
-  );
-  assert('HTTP 200 or 201', r.status === 200 || r.status === 201, `got ${r.status}`);
+  const r = await req('POST', '/api/capture-packages', {
+    user_id: userId,
+    project_id: projectId,
+    task_template_id: templateId ?? null,
+    custom_task_text: 'Smoke test task',
+  });
+  assert('HTTP 200 or 201', r.status === 200 || r.status === 201, `got ${r.status} — ${JSON.stringify(r.json)}`);
   assert('returns id', !!r.json?.id, JSON.stringify(r.json));
   packageId = r.json?.id;
 }
@@ -137,56 +129,44 @@ if (!packageId) {
   process.exit(1);
 }
 
-// 6. Upload capture (with GPS + integrity fields)
-console.log('6. Upload capture');
+// 7. Upload capture (GPS + integrity fields)
+console.log('7. Upload capture');
 {
   const sha = sha256OfDataUrl(TINY_JPEG);
-  const r = await req(
-    'POST',
-    '/api/captures',
-    {
-      project_id: projectId,
-      package_id: packageId,
-      latitude: 32.08088,
-      longitude: 34.78057,
-      gps_accuracy_m: 5.2,
-      altitude_m: 38.1,
-      note: 'Smoke test capture',
-      evidence_sha256: sha,
-      capture_source: 'worker',
-      photo_data: TINY_JPEG,
-    },
-    token,
-  );
-  assert('HTTP 200 or 201', r.status === 200 || r.status === 201, `got ${r.status}`);
+  const r = await req('POST', '/api/captures', {
+    user_id: userId,
+    project_id: projectId,
+    package_id: packageId,
+    latitude: 32.08088,
+    longitude: 34.78057,
+    gps_accuracy_m: 5.2,
+    altitude_m: 38.1,
+    note: 'Smoke test capture',
+    evidence_sha256: sha,
+    capture_source: 'worker',
+    photo_data: TINY_JPEG,
+  });
+  assert('HTTP 200 or 201', r.status === 200 || r.status === 201, `got ${r.status} — ${JSON.stringify(r.json)}`);
   assert('returns id', !!r.json?.id, JSON.stringify(r.json));
   captureId = r.json?.id;
-
-  // Verify integrity fields were persisted
-  if (r.json?.evidence_sha256 !== undefined) {
-    assert('evidence_sha256 persisted', r.json.evidence_sha256 === sha);
-  }
-  if (r.json?.gps_accuracy_m !== undefined) {
-    assert('gps_accuracy_m persisted', r.json.gps_accuracy_m === 5.2);
-  }
+  if (r.json?.evidence_sha256 !== undefined) assert('evidence_sha256 persisted', r.json.evidence_sha256 === sha);
+  if (r.json?.gps_accuracy_m !== undefined) assert('gps_accuracy_m persisted', Number(r.json.gps_accuracy_m) === 5.2, String(r.json.gps_accuracy_m));
 }
 
-// 7. Patch package status → submitted
-console.log('7. Patch package status → submitted');
+// 8. Patch package status → submitted
+console.log('8. Patch package status → submitted');
 {
-  const r = await req(
-    'PATCH',
-    `/api/packages/${packageId}/status`,
-    { status: 'submitted' },
-    token,
-  );
-  assert('HTTP 200', r.ok, `got ${r.status}`);
+  const r = await req('PATCH', `/api/packages/${packageId}/status`, {
+    status: 'submitted',
+    actor_id: userId,
+  });
+  assert('HTTP 200', r.ok, `got ${r.status} — ${JSON.stringify(r.json)}`);
 }
 
-// 8. Verify capture appears in GET /api/captures
-console.log('8. Verify capture retrievable');
+// 9. Verify capture appears in GET /api/captures
+console.log('9. Verify capture retrievable');
 {
-  const r = await req('GET', `/api/captures?package_id=${packageId}`, null, token);
+  const r = await req('GET', `/api/captures?package_id=${packageId}`);
   assert('HTTP 200', r.ok, `got ${r.status}`);
   if (Array.isArray(r.json)) {
     assert('capture present in list', r.json.some((c) => c.id === captureId));
@@ -195,7 +175,7 @@ console.log('8. Verify capture retrievable');
   }
 }
 
-// 9. Summary
+// 10. Summary
 console.log('\n─────────────────────────────────────────');
 if (failCount === 0) {
   console.log(`${PASS} All checks passed\n`);
