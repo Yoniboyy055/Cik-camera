@@ -159,7 +159,7 @@ export default async function handler(req: any, res: any) {
         photoUrl = await uploadPhoto(normalizedPackageId || undefined, id, body.photo_data);
       }
 
-      const { error } = await supabase.from('captures').insert({
+      const insertPayload: Record<string, unknown> = {
         id,
         package_id: normalizedPackageId,
         requirement_id: normalizedRequirementId,
@@ -170,14 +170,21 @@ export default async function handler(req: any, res: any) {
         unit: normalizeNullableText(body.unit),
         latitude: body.latitude || null,
         longitude: body.longitude || null,
-        gps_accuracy_m: body.gps_accuracy_m || null,
-        altitude_m: body.altitude_m || null,
         address: normalizeNullableText(body.address),
         evidence_sha256: normalizeNullableText(body.evidence_sha256),
         capture_source: body.capture_source === 'supervisor' ? 'supervisor' : 'worker',
         photo_url: photoUrl,
         status: 'uploaded',
-      });
+      };
+
+      if (typeof body.gps_accuracy_m === 'number') {
+        insertPayload.gps_accuracy_m = body.gps_accuracy_m;
+      }
+      if (typeof body.altitude_m === 'number') {
+        insertPayload.altitude_m = body.altitude_m;
+      }
+
+      const { error } = await supabase.from('captures').insert(insertPayload);
 
       if (error) {
         return serverError(res, error);
