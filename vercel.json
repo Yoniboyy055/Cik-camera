@@ -4,6 +4,22 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/login",
+      "destination": "/api/auth/login"
+    },
+    {
+      "source": "/api/logout",
+      "destination": "/api/auth/logout"
+    },
+    {
+      "source": "/api/register",
+      "destination": "/api/auth/register"
+    },
+    {
+      "source": "/api/session",
+      "destination": "/api/auth/session"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
