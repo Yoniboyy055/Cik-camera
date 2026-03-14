@@ -8,10 +8,25 @@ export default function Settings() {
   const navigate = useNavigate();
 
   const [sunlightMode, setSunlightMode] = useState(() => {
-    return localStorage.getItem('cik_sunlight_mode') === 'true';
+    // Migrate legacy key
+    const legacy = localStorage.getItem('cik_sunlight_mode');
+    if (legacy !== null) { localStorage.setItem('gp_sunlight_mode', legacy); localStorage.removeItem('cik_sunlight_mode'); }
+    return localStorage.getItem('gp_sunlight_mode') === 'true';
   });
-  const [notifications, setNotifications] = useState(true);
-  const [gpsAccuracy, setGpsAccuracy] = useState('high');
+  const [notifications, setNotifications] = useState(
+    () => localStorage.getItem('gp_notifications') !== 'false',
+  );
+  const [gpsAccuracy, setGpsAccuracy] = useState(
+    () => localStorage.getItem('gp_gps_accuracy') ?? 'high',
+  );
+
+  useEffect(() => {
+    localStorage.setItem('gp_notifications', String(notifications));
+  }, [notifications]);
+
+  useEffect(() => {
+    localStorage.setItem('gp_gps_accuracy', gpsAccuracy);
+  }, [gpsAccuracy]);
 
   useEffect(() => {
     if (sunlightMode) {
@@ -19,7 +34,7 @@ export default function Settings() {
     } else {
       document.documentElement.classList.remove('sunlight');
     }
-    localStorage.setItem('cik_sunlight_mode', String(sunlightMode));
+    localStorage.setItem('gp_sunlight_mode', String(sunlightMode));
   }, [sunlightMode]);
 
   return (

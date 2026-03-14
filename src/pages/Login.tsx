@@ -107,7 +107,7 @@ export default function Login() {
           <div className="w-16 h-16 bg-brand-primary rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-brand-primary/20">
             <Camera className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-brand-text">CIK Proof Capture</h1>
+          <h1 className="text-2xl font-bold text-brand-text">GrandProof</h1>
           <p className="text-brand-text-muted text-sm mt-1">
             {mode === 'signin' ? 'Sign in to your account' : 'Create a new account'}
           </p>

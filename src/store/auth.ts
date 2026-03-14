@@ -14,13 +14,18 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: JSON.parse(localStorage.getItem('cik_user') || 'null'),
+  user: (() => {
+    // Migrate legacy cik_user key to gp_user
+    const legacy = localStorage.getItem('cik_user');
+    if (legacy) { localStorage.setItem('gp_user', legacy); localStorage.removeItem('cik_user'); }
+    return JSON.parse(localStorage.getItem('gp_user') || 'null');
+  })(),
   login: (user) => {
-    localStorage.setItem('cik_user', JSON.stringify(user));
+    localStorage.setItem('gp_user', JSON.stringify(user));
     set({ user });
   },
   logout: () => {
-    localStorage.removeItem('cik_user');
+    localStorage.removeItem('gp_user');
     set({ user: null });
   },
 }));

@@ -2,10 +2,21 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { useAuthStore } from '../store/auth';
-import { Camera, MapPin, CheckCircle, ArrowLeft, Loader2, RefreshCw, UploadCloud, Timer, Grid3X3, Copy, Mic, MicOff, Ruler, FileText, Image as ImageIcon, Zap, ListChecks, Navigation, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
+import { Camera, MapPin, CheckCircle, ArrowLeft, Loader2, RefreshCw, UploadCloud, Timer, Grid3X3, Copy, Mic, MicOff, Ruler, FileText, Image as ImageIcon, Zap, ListChecks, Navigation, SwitchCamera, ZoomIn, ZoomOut, X as XIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import Map3D from '../components/Map3D';
 import imageCompression from 'browser-image-compression';
+
+const GPS_OPTIONS: Record<string, PositionOptions> = {
+  low:    { enableHighAccuracy: false, maximumAge: 60_000, timeout: 3_000 },
+  medium: { enableHighAccuracy: true,  maximumAge: 15_000, timeout: 6_000 },
+  high:   { enableHighAccuracy: true,  maximumAge: 0,      timeout: 12_000 },
+};
+
+function getGpsOptions(): PositionOptions {
+  const level = localStorage.getItem('gp_gps_accuracy') ?? 'high';
+  return GPS_OPTIONS[level] ?? GPS_OPTIONS.high;
+}
 
 type Step = 'picker' | 'checklist' | 'camera' | 'review' | 'uploading' | 'success';
 
@@ -16,6 +27,7 @@ interface Requirement {
   is_required: number;
   status?: 'pending' | 'captured';
 }
+
 
 export default function CaptureFlow() {
   const user = useAuthStore((state) => state.user);
@@ -56,6 +68,7 @@ export default function CaptureFlow() {
   const [maxZoom, setMaxZoom] = useState(1);
   const [isZoomSupported, setIsZoomSupported] = useState(false);
   const [isTorchSupported, setIsTorchSupported] = useState(false);
+  const [navSheetOpen, setNavSheetOpen] = useState(false);
   
   const webcamRef = useRef<Webcam>(null);
   const recognitionRef = useRef<any>(null);
@@ -131,7 +144,7 @@ export default function CaptureFlow() {
           reverseGeocode(pos.coords.latitude, pos.coords.longitude);
         },
         (err) => console.error(err),
-        { enableHighAccuracy: true }
+        getGpsOptions()
       );
     }
   }, [reverseGeocode]);
@@ -226,10 +239,10 @@ export default function CaptureFlow() {
     // --- Top Info Card ---
     drawGlassCard(padding, padding, topCardW, topCardH);
     
-    // CIK Proof Title
+    // GrandProof Title
     ctx.fillStyle = '#34d399'; // emerald-400
     ctx.font = 'bold 36px sans-serif';
-    ctx.fillText('CIK Proof', padding + 40, padding + 60);
+    ctx.fillText('GrandProof', padding + 40, padding + 60);
 
     // Project Name
     ctx.fillStyle = 'white';
@@ -818,26 +831,38 @@ export default function CaptureFlow() {
                         <Copy className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => {
-                          const coords = `${location.lat},${location.lng}`;
-                          const app = window.prompt('Open navigation in: google | waze | apple', 'google');
-                          const selected = (app || 'google').toLowerCase();
-                          if (selected === 'waze') {
-                            window.open(`https://waze.com/ul?ll=${coords}&navigate=yes`, '_blank');
-                            return;
-                          }
-                          if (selected === 'apple') {
-                            window.open(`http://maps.apple.com/?daddr=${coords}`, '_blank');
-                            return;
-                          }
-                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${coords}`, '_blank');
-                        }}
+                        onClick={() => setNavSheetOpen(true)}
                         className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 hover:bg-emerald-500/30"
                         title="Navigate"
                       >
                         <Navigation className="w-4 h-4" />
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Nav app action sheet */}
+              {navSheetOpen && location && (
+                <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-4" onClick={() => setNavSheetOpen(false)}>
+                  <div className="bg-brand-surface rounded-2xl w-full max-w-sm p-4 space-y-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex justify-between items-center mb-3">
+                      <p className="font-semibold text-brand-text text-sm">Open in Navigation App</p>
+                      <button onClick={() => setNavSheetOpen(false)} className="text-brand-text-muted"><XIcon className="w-4 h-4" /></button>
+                    </div>
+                    {[
+                      { label: 'Google Maps', url: `https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}` },
+                      { label: 'Apple Maps',  url: `http://maps.apple.com/?daddr=${location.lat},${location.lng}` },
+                      { label: 'Waze',        url: `https://waze.com/ul?ll=${location.lat},${location.lng}&navigate=yes` },
+                    ].map(({ label, url }) => (
+                      <button
+                        key={label}
+                        onClick={() => { window.open(url, '_blank'); setNavSheetOpen(false); }}
+                        className="w-full py-3 rounded-xl bg-brand-bg border border-brand-border text-brand-text text-sm font-medium hover:bg-brand-border/50 transition-colors"
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}

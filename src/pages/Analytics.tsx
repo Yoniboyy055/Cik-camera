@@ -37,11 +37,14 @@ export default function Analytics() {
       });
   }, []);
 
-  // Derive stats
+  // Derive stats — packages/captures use: in_progress, submitted, uploaded, approved, rejected
+  // Analytics treats submitted + uploaded + in_progress as "pending review"
   const totalCaptures = captures.length;
   const approved = captures.filter((c) => c.status === 'approved').length;
   const rejected = captures.filter((c) => c.status === 'rejected').length;
-  const pending = captures.filter((c) => c.status === 'pending').length;
+  const pending = captures.filter((c) =>
+    c.status === 'submitted' || c.status === 'uploaded' || c.status === 'in_progress'
+  ).length;
 
   // Captures by project
   const byProject = captures.reduce<Record<string, number>>((acc, c) => {

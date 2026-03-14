@@ -1,11 +1,94 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { LogOut, Search, Filter, MapPin, Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, Copy, FileOutput, Navigation, Settings, BarChart3 } from 'lucide-react';
+import {
+  LogOut, Search, Clock, CheckCircle, XCircle, FileText, Image as ImageIcon,
+  Copy, FileOutput, Navigation, Settings, BarChart3, Menu, X, ChevronLeft,
+  AlertTriangle, Download, Camera,
+} from 'lucide-react';
 import { format } from 'date-fns';
-import Map3D from '../components/Map3D';
+import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import { downloadEvidenceBundle, makeEvidenceAvailableOffline } from '../features/reports/ReportBundle';
+
+// ─── Rejection reason modal ───────────────────────────────────────────────────
+
+const REJECTION_CODES = [
+  { code: 'blurry', label: 'Photo is blurry or unclear' },
+  { code: 'incomplete', label: 'Missing required shots' },
+  { code: 'wrong_location', label: 'Wrong location / site mismatch' },
+  { code: 'no_measurement', label: 'Measurement not visible' },
+  { code: 'other', label: 'Other (describe below)' },
+];
+
+function RejectionModal({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: (code: string, text: string) => void;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState('');
+  const [text, setText] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.15 }}
+        className="bg-brand-surface border border-brand-border rounded-2xl p-6 w-full max-w-md shadow-xl"
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <AlertTriangle className="w-5 h-5 text-brand-danger shrink-0" />
+          <h3 className="font-bold text-brand-text text-lg">Rejection Reason</h3>
+        </div>
+        <div className="space-y-2 mb-4">
+          {REJECTION_CODES.map((r) => (
+            <button
+              key={r.code}
+              onClick={() => setCode(r.code)}
+              className={`w-full text-left px-4 py-2.5 rounded-lg text-sm border transition-colors ${
+                code === r.code
+                  ? 'bg-brand-danger/10 border-brand-danger/40 text-brand-danger'
+                  : 'bg-brand-bg border-brand-border text-brand-text hover:border-brand-danger/30'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Additional notes (optional)..."
+          className="w-full bg-brand-bg border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text resize-none h-20 mb-5 focus:outline-none focus:ring-1 focus:ring-brand-danger placeholder:text-brand-text-muted"
+        />
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-lg border border-brand-border text-brand-text-muted text-sm hover:bg-brand-border/50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={!code}
+            onClick={() => onConfirm(code, text)}
+            className="flex-1 py-2.5 rounded-lg bg-brand-danger text-white font-semibold text-sm disabled:opacity-40 hover:bg-brand-danger/90 transition-colors"
+          >
+            Reject Package
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Sidebar constants ────────────────────────────────────────────────────────
+
+const SIDEBAR_OPEN_W = 264;
+const SIDEBAR_CLOSED_W = 72;
 
 export default function SupervisorDashboard() {
   const user = useAuthStore((state) => state.user);
@@ -19,6 +102,16 @@ export default function SupervisorDashboard() {
   const [filterProject, setFilterProject] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterDate, setFilterDate] = useState('');
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Rejection modal
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+
+  // Offline caching
+  const [offlineCaching, setOfflineCaching] = useState(false);
 
   const fetchCaptures = () => {
     fetch('/api/captures')
@@ -89,18 +182,44 @@ export default function SupervisorDashboard() {
     });
   };
 
-  const updateStatus = async (id: string, status: string) => {
+  const updateStatus = async (id: string, status: string, rejectionCode?: string, rejectionText?: string) => {
     const endpoint = id === 'legacy' ? `/api/captures/${id}/status` : `/api/packages/${id}/status`;
     await fetch(endpoint, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, rejection_reason_code: rejectionCode, rejection_reason_text: rejectionText }),
     });
     fetchCaptures();
     if (selectedCapture?.id === id) {
       setSelectedCapture({ ...selectedCapture, status });
     }
     toast.success(`Package marked as ${status}`);
+  };
+
+  const handleRejectConfirm = async (code: string, text: string) => {
+    if (!rejectTarget) return;
+    setRejectTarget(null);
+    await updateStatus(rejectTarget, 'rejected', code, text);
+  };
+
+  const handleDownloadEvidence = () => {
+    if (!selectedCapture) return;
+    downloadEvidenceBundle(selectedCapture).catch(() =>
+      toast.error('Failed to download evidence bundle.'),
+    );
+  };
+
+  const handleMakeOffline = async () => {
+    setOfflineCaching(true);
+    toast.loading('Caching evidence images for offline access...', { id: 'offline' });
+    try {
+      const count = await makeEvidenceAvailableOffline(captures);
+      toast.success(`${count} new images cached for offline access.`, { id: 'offline' });
+    } catch {
+      toast.error('Some images could not be cached.', { id: 'offline' });
+    } finally {
+      setOfflineCaching(false);
+    }
   };
 
   const generateReport = async () => {
@@ -117,7 +236,7 @@ export default function SupervisorDashboard() {
       
       doc.setFontSize(22);
       doc.setTextColor(16, 185, 129); // emerald-500
-      doc.text(`CIK Daily Jobsite Report`, 14, 22);
+      doc.text(`GrandProof Daily Report`, 14, 22);
       
       doc.setFontSize(12);
       doc.setTextColor(100, 116, 139); // slate-500
@@ -170,7 +289,7 @@ export default function SupervisorDashboard() {
         yPos += 15;
       }
       
-      doc.save(`CIK_Report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      doc.save(`GrandProof_Daily_Report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
       toast.success('Report generated with images!', { id: 'pdf' });
     } catch (err) {
       console.error(err);
@@ -178,122 +297,176 @@ export default function SupervisorDashboard() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-brand-bg flex flex-col md:flex-row text-brand-text">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-brand-surface border-r border-brand-border flex flex-col h-auto md:h-screen sticky top-0 z-20">
-        <div className="p-6 border-b border-brand-border flex items-center gap-3">
-          <div className="w-8 h-8 bg-brand-primary rounded-lg flex items-center justify-center shadow-sm">
-            <ImageIcon className="w-4 h-4 text-white" />
-          </div>
-          <h1 className="font-bold text-brand-text text-lg tracking-tight">CIK Proof</h1>
-        </div>
-        
-        <div className="p-4 flex-1">
-          <div className="space-y-1">
-            <button className="w-full flex items-center gap-3 px-4 py-2.5 bg-brand-primary/10 text-brand-primary rounded-lg font-medium text-sm transition-colors">
-              <FileText className="w-4 h-4" />
-              Proof Packages
-            </button>
-            <button 
-              onClick={generateReport}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-brand-text-muted hover:bg-brand-border/50 rounded-lg font-medium text-sm transition-colors mt-2"
-            >
-              <FileOutput className="w-4 h-4" />
-              Generate Daily Report
-            </button>
-            <button
-              onClick={() => navigate('/analytics')}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-brand-text-muted hover:bg-brand-border/50 rounded-lg font-medium text-sm transition-colors"
-            >
-              <BarChart3 className="w-4 h-4" />
-              Site Intelligence
-            </button>
-            <button
-              onClick={() => navigate('/settings')}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-brand-text-muted hover:bg-brand-border/50 rounded-lg font-medium text-sm transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </button>
-          </div>
-        </div>
+  // ─── Sidebar nav items ─────────────────────────────────────────────────────
 
-        <div className="p-4 border-t border-brand-border mt-auto">
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <div className="w-8 h-8 bg-brand-border rounded-full flex items-center justify-center text-brand-text font-bold text-sm">
+  const navItems = [
+    { label: 'Proof Packages', icon: <FileText className="w-4 h-4 shrink-0" />, action: null, active: true },
+    { label: 'Generate Daily Report', icon: <FileOutput className="w-4 h-4 shrink-0" />, action: generateReport },
+    { label: 'Supervisor Capture', icon: <Camera className="w-4 h-4 shrink-0" />, action: () => navigate('/supervisor-capture') },
+    { label: 'Site Intelligence', icon: <BarChart3 className="w-4 h-4 shrink-0" />, action: () => navigate('/analytics') },
+    { label: 'Settings', icon: <Settings className="w-4 h-4 shrink-0" />, action: () => navigate('/settings') },
+  ];
+
+  const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
+    <div className="flex flex-col h-full">
+      <div className={`p-4 border-b border-brand-border flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
+        <div className="w-8 h-8 bg-brand-primary rounded-lg flex items-center justify-center shadow-sm shrink-0">
+          <ImageIcon className="w-4 h-4 text-white" />
+        </div>
+        {!collapsed && (
+          <h1 className="font-bold text-brand-text text-lg tracking-tight whitespace-nowrap">GrandProof</h1>
+        )}
+      </div>
+      <div className="p-3 flex-1 space-y-1">
+        {navItems.map((item) => (
+          <button
+            key={item.label}
+            title={collapsed ? item.label : undefined}
+            onClick={() => item.action?.()}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-colors ${
+              item.active
+                ? 'bg-brand-primary/10 text-brand-primary'
+                : 'text-brand-text-muted hover:bg-brand-border/50 hover:text-brand-text'
+            } ${collapsed ? 'justify-center' : ''}`}
+          >
+            {item.icon}
+            {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
+          </button>
+        ))}
+      </div>
+      {!collapsed && (
+        <div className="px-3 pb-2">
+          <button
+            onClick={handleMakeOffline}
+            disabled={offlineCaching}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-brand-text-muted border border-brand-border hover:bg-brand-border/50 transition-colors disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5 shrink-0" />
+            {offlineCaching ? 'Caching…' : 'Make Available Offline'}
+          </button>
+        </div>
+      )}
+      <div className={`p-3 border-t border-brand-border mt-auto ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}>
+        {!collapsed && (
+          <div className="flex items-center gap-3 mb-3 px-1">
+            <div className="w-8 h-8 bg-brand-border rounded-full flex items-center justify-center text-brand-text font-bold text-sm shrink-0">
               {user?.name?.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-brand-text truncate">{user?.name}</p>
-              <p className="text-xs text-brand-text-muted truncate">Supervisor</p>
+              <p className="text-xs text-brand-text-muted">Supervisor</p>
             </div>
           </div>
-          <button onClick={logout} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-brand-text-muted hover:bg-brand-border/50 rounded-lg text-sm font-medium transition-colors border border-brand-border">
-            <LogOut className="w-4 h-4" />
-            Sign Out
-          </button>
-        </div>
-      </aside>
+        )}
+        <button
+          title={collapsed ? 'Sign Out' : undefined}
+          onClick={logout}
+          className={`flex items-center gap-2 px-3 py-2 text-brand-text-muted hover:bg-brand-border/50 rounded-lg text-sm font-medium border border-brand-border transition-colors ${collapsed ? '' : 'w-full justify-center'}`}
+        >
+          <LogOut className="w-4 h-4 shrink-0" />
+          {!collapsed && 'Sign Out'}
+        </button>
+      </div>
+    </div>
+  );
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-brand-surface border-b border-brand-border px-8 py-5 flex justify-between items-center shrink-0">
-          <h2 className="text-xl font-bold text-brand-text">Proof Packages</h2>
-          <div className="flex gap-3">
+  return (
+    <div className="min-h-screen bg-brand-bg flex text-brand-text relative">
+
+      {/* ── Desktop Collapsible Sidebar ────────────────────────────────────── */}
+      <motion.aside
+        animate={{ width: sidebarOpen ? SIDEBAR_OPEN_W : SIDEBAR_CLOSED_W }}
+        transition={{ duration: sidebarOpen ? 0.22 : 0.18, ease: sidebarOpen ? 'easeOut' : 'easeIn' }}
+        className="hidden md:flex flex-col bg-brand-surface border-r border-brand-border h-screen sticky top-0 overflow-hidden shrink-0 z-20"
+      >
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="absolute top-3 right-2 z-10 p-1.5 rounded-md text-brand-text-muted hover:text-brand-text hover:bg-brand-border/50 transition-colors"
+          title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+        </button>
+        <SidebarContent collapsed={!sidebarOpen} />
+      </motion.aside>
+
+      {/* ── Mobile hamburger ────────────────────────────────────────────────── */}
+      <button
+        className="md:hidden fixed top-4 left-4 z-30 p-2 bg-brand-surface border border-brand-border rounded-lg shadow"
+        onClick={() => setMobileDrawerOpen(true)}
+      >
+        <Menu className="w-5 h-5 text-brand-text" />
+      </button>
+
+      {/* ── Mobile Drawer ───────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {mobileDrawerOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="fixed inset-0 z-40 bg-black/60"
+              onClick={() => setMobileDrawerOpen(false)}
+            />
+            <motion.aside
+              initial={{ x: -SIDEBAR_OPEN_W }}
+              animate={{ x: 0 }}
+              exit={{ x: -SIDEBAR_OPEN_W }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              style={{ width: SIDEBAR_OPEN_W }}
+              className="fixed top-0 left-0 h-full z-50 bg-brand-surface border-r border-brand-border flex flex-col overflow-hidden"
+            >
+              <button
+                className="absolute top-3 right-3 p-1.5 rounded-md text-brand-text-muted hover:text-brand-text"
+                onClick={() => setMobileDrawerOpen(false)}
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <SidebarContent collapsed={false} />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+
+      {/* ── Main Content ─────────────────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+        <header className="bg-brand-surface border-b border-brand-border px-6 py-4 flex flex-wrap justify-between items-center gap-3 shrink-0">
+          <h2 className="text-xl font-bold text-brand-text pl-10 md:pl-0">Proof Packages</h2>
+          <div className="flex flex-wrap gap-2">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-muted" />
-              <input 
-                type="text" 
-                placeholder="Search worker or project..." 
+              <input
+                type="text"
+                placeholder="Search worker or project..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-2 bg-brand-bg border border-brand-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary w-64 transition-all text-brand-text placeholder:text-brand-text-muted"
+                className="pl-9 pr-4 py-2 bg-brand-bg border border-brand-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary w-56 text-brand-text placeholder:text-brand-text-muted"
               />
             </div>
-            <div className="flex gap-2">
-              <select
-                value={filterWorker}
-                onChange={(e) => setFilterWorker(e.target.value)}
-                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
-              >
-                <option value="">All Workers</option>
-                {uniqueWorkers.map((worker) => (
-                  <option key={worker} value={worker}>{worker}</option>
-                ))}
-              </select>
-              <select
-                value={filterProject}
-                onChange={(e) => setFilterProject(e.target.value)}
-                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
-              >
-                <option value="">All Projects</option>
-                {uniqueProjects.map((project) => (
-                  <option key={project} value={project}>{project}</option>
-                ))}
-              </select>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
-              >
-                <option value="">All Statuses</option>
-                <option value="uploaded">Uploaded</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-              <input
-                type="date"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
-                className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text"
-              />
-            </div>
+            <select value={filterWorker} onChange={(e) => setFilterWorker(e.target.value)} className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text">
+              <option value="">All Workers</option>
+              {uniqueWorkers.map((w) => <option key={w} value={w}>{w}</option>)}
+            </select>
+            <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text">
+              <option value="">All Projects</option>
+              {uniqueProjects.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text">
+              <option value="">All Statuses</option>
+              <option value="uploaded">Uploaded</option>
+              <option value="submitted">Submitted</option>
+              <option value="in_progress">In Progress</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="px-2 py-2 bg-brand-bg border border-brand-border rounded-lg text-xs text-brand-text" />
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-8 flex gap-8">
-          {/* Feed List */}
+        <div className="flex-1 overflow-auto p-6 flex gap-6">
+          {/* Feed */}
           <div className="flex-1 space-y-4 max-w-3xl">
             {loading ? (
               <div className="space-y-4">
@@ -302,48 +475,38 @@ export default function SupervisorDashboard() {
             ) : filteredCaptures.length === 0 ? (
               <div className="text-center py-20 text-brand-text-muted">No packages found.</div>
             ) : (
-              filteredCaptures.map(pkg => (
-                <div 
-                  key={pkg.id} 
+              filteredCaptures.map((pkg) => (
+                <div
+                  key={pkg.id}
                   onClick={() => setSelectedCapture(pkg)}
-                  className={`bg-brand-surface rounded-xl border p-4 flex gap-6 cursor-pointer transition-all hover:border-brand-primary/50 ${selectedCapture?.id === pkg.id ? 'border-brand-primary ring-1 ring-brand-primary' : 'border-brand-border'}`}
+                  className={`bg-brand-surface rounded-xl border p-4 flex gap-5 cursor-pointer transition-all hover:border-brand-primary/50 ${selectedCapture?.id === pkg.id ? 'border-brand-primary ring-1 ring-brand-primary' : 'border-brand-border'}`}
                 >
-                  <div className="w-32 h-32 bg-brand-bg rounded-lg overflow-hidden shrink-0 border border-brand-border grid grid-cols-2 gap-0.5">
+                  <div className="w-28 h-28 bg-brand-bg rounded-lg overflow-hidden shrink-0 border border-brand-border grid grid-cols-2 gap-0.5">
                     {pkg.captures.slice(0, 4).map((c: any, i: number) => (
                       <img key={i} src={c.photo_url} alt="" className="w-full h-full object-cover" />
                     ))}
                     {pkg.captures.length === 0 && <div className="col-span-2 flex items-center justify-center text-brand-text-muted text-xs">No Photos</div>}
                   </div>
-                  
-                  <div className="flex-1 flex flex-col justify-between py-1">
+                  <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
                     <div>
                       <div className="flex justify-between items-start mb-1">
-                        <h3 className="font-bold text-brand-text text-lg">{pkg.project_name}</h3>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider
-                          ${pkg.status === 'approved' ? 'bg-brand-accent/20 text-brand-accent' : 
-                            pkg.status === 'rejected' ? 'bg-brand-danger/20 text-brand-danger' : 
-                            'bg-brand-warning/20 text-brand-warning'}`}
-                        >
+                        <h3 className="font-bold text-brand-text truncate">{pkg.project_name || 'Unknown Project'}</h3>
+                        <span className={`ml-2 shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${pkg.status === 'approved' ? 'bg-brand-accent/20 text-brand-accent' : pkg.status === 'rejected' ? 'bg-brand-danger/20 text-brand-danger' : 'bg-brand-warning/20 text-brand-warning'}`}>
                           {pkg.status}
                         </span>
                       </div>
-                      <p className="text-sm text-brand-text-muted font-medium">{pkg.template_name}</p>
+                      <p className="text-sm text-brand-text-muted">{pkg.template_name}</p>
                       <div className="flex items-center gap-3 mt-2">
                         <p className="text-sm text-brand-text-muted flex items-center gap-1.5">
-                          <span className="w-5 h-5 bg-brand-border rounded-full flex items-center justify-center text-[10px] font-bold text-brand-text">
-                            {pkg.user_name?.charAt(0)}
-                          </span>
+                          <span className="w-5 h-5 bg-brand-border rounded-full flex items-center justify-center text-[10px] font-bold text-brand-text">{pkg.user_name?.charAt(0)}</span>
                           {pkg.user_name}
                         </p>
-                        <span className="text-xs bg-brand-border/50 px-2 py-0.5 rounded text-brand-text-muted">
-                          {pkg.captures.length} Photos
-                        </span>
+                        <span className="text-xs bg-brand-border/50 px-2 py-0.5 rounded text-brand-text-muted">{pkg.captures.length} Photos</span>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-4 text-xs text-brand-text-muted font-medium">
-                      <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {format(new Date(pkg.created_at), 'MMM d, yyyy h:mm a')}</span>
-                    </div>
+                    <p className="text-xs text-brand-text-muted flex items-center gap-1 mt-2">
+                      <Clock className="w-3.5 h-3.5" /> {pkg.created_at ? format(new Date(pkg.created_at), 'MMM d, yyyy h:mm a') : '—'}
+                    </p>
                   </div>
                 </div>
               ))
@@ -351,8 +514,16 @@ export default function SupervisorDashboard() {
           </div>
 
           {/* Detail Panel */}
+          <AnimatePresence>
           {selectedCapture && (
-            <div className="w-96 bg-brand-surface border border-brand-border rounded-xl shadow-sm flex flex-col h-fit sticky top-8 overflow-hidden shrink-0">
+            <motion.div
+              key="detail"
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 24 }}
+              transition={{ duration: 0.18 }}
+              className="w-96 bg-brand-surface border border-brand-border rounded-xl shadow-sm flex flex-col h-fit sticky top-6 overflow-hidden shrink-0"
+            >
               <div className="p-4 border-b border-brand-border flex justify-between items-center bg-brand-bg/50">
                 <h3 className="font-bold text-brand-text">Package Details</h3>
                 <button onClick={() => setSelectedCapture(null)} className="text-brand-text-muted hover:text-brand-text">
@@ -360,45 +531,42 @@ export default function SupervisorDashboard() {
                 </button>
               </div>
               
-              <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
-                <div className="space-y-6">
+              <div className="p-4 overflow-y-auto max-h-[calc(100vh-260px)]">
+                <div className="space-y-5">
                   {selectedCapture.captures.map((c: any) => (
-                    <div key={c.id} className="space-y-3 border-b border-brand-border pb-6 last:border-0">
+                    <div key={c.id} className="space-y-3 border-b border-brand-border pb-5 last:border-0">
                       <p className="text-xs font-bold text-brand-primary uppercase tracking-widest">{c.requirement_label || 'Field Proof'}</p>
-                      <div className="aspect-[3/4] bg-brand-bg rounded-lg overflow-hidden relative group border border-brand-border">
+                      <div className="aspect-[3/4] bg-brand-bg rounded-lg overflow-hidden border border-brand-border">
                         <img src={c.photo_url} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
+                      {c.evidence_sha256 && (
+                        <div className="bg-brand-bg p-2 rounded border border-brand-border text-xs">
+                          <p className="text-brand-text-muted mb-0.5">Evidence SHA-256</p>
+                          <p className="font-mono text-[10px] text-brand-text break-all">{c.evidence_sha256}</p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="bg-brand-bg p-2 rounded border border-brand-border">
                           <p className="text-brand-text-muted mb-0.5">Measurement</p>
                           <p className="font-bold text-brand-text">{c.measurement ? `${c.measurement}${c.unit}` : 'N/A'}</p>
                         </div>
-                        <div className="bg-brand-bg p-2 rounded border border-brand-border relative group/loc">
+                        <div className="bg-brand-bg p-2 rounded border border-brand-border">
                           <div className="flex justify-between items-start">
                             <p className="text-brand-text-muted mb-0.5">Location</p>
                             {c.latitude && c.longitude && (
-                              <div className="flex gap-1 opacity-0 group-hover/loc:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(`${c.latitude}, ${c.longitude}`);
-                                    toast.success('Coordinates copied');
-                                  }}
-                                  className="p-1 hover:bg-brand-primary/10 rounded text-brand-primary"
-                                  title="Copy Coordinates"
-                                >
-                                  <Copy className="w-3 h-3" />
-                                </button>
-                                <button 
-                                  onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${c.latitude},${c.longitude}`, '_blank')}
-                                  className="p-1 hover:bg-brand-primary/10 rounded text-brand-primary"
-                                  title="Navigate"
-                                >
-                                  <Navigation className="w-3 h-3" />
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`${c.latitude}, ${c.longitude}`);
+                                  toast.success('Coordinates copied');
+                                }}
+                                className="p-1 hover:bg-brand-primary/10 rounded text-brand-primary"
+                                title="Copy Coordinates"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
                             )}
                           </div>
-                          <p className="font-bold text-brand-text truncate">{c.address}</p>
+                          <p className="font-bold text-brand-text truncate">{c.address || '—'}</p>
                         </div>
                       </div>
                       {c.note && (
@@ -412,25 +580,45 @@ export default function SupervisorDashboard() {
                 </div>
               </div>
 
-              <div className="p-4 border-t border-brand-border bg-brand-surface flex gap-3">
-                <button 
-                  onClick={() => updateStatus(selectedCapture.id, 'rejected')}
-                  className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-colors ${selectedCapture.status === 'rejected' ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/30' : 'bg-brand-bg border border-brand-border text-brand-text hover:bg-brand-border/50'}`}
+              <div className="p-4 border-t border-brand-border bg-brand-surface flex flex-col gap-2">
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setRejectTarget(selectedCapture.id)}
+                    className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-colors ${selectedCapture.status === 'rejected' ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/30' : 'bg-brand-bg border border-brand-border text-brand-text hover:bg-brand-border/50'}`}
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => updateStatus(selectedCapture.id, 'approved')}
+                    className={`flex-1 py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${selectedCapture.status === 'approved' ? 'bg-brand-accent text-brand-bg shadow-md shadow-brand-accent/20' : 'bg-brand-accent/10 border border-brand-accent/20 text-brand-accent hover:bg-brand-accent/20'}`}
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Approve
+                  </button>
+                </div>
+                <button
+                  onClick={handleDownloadEvidence}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs text-brand-text-muted border border-brand-border hover:bg-brand-border/50 transition-colors"
                 >
-                  Reject
-                </button>
-                <button 
-                  onClick={() => updateStatus(selectedCapture.id, 'approved')}
-                  className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 ${selectedCapture.status === 'approved' ? 'bg-brand-accent text-brand-bg shadow-md shadow-brand-accent/20' : 'bg-brand-accent/10 border border-brand-accent/20 text-brand-accent hover:bg-brand-accent/20'}`}
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  Approve
+                  <Download className="w-3.5 h-3.5" />
+                  Download Evidence Bundle
                 </button>
               </div>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </div>
       </main>
+
+      {/* Rejection Modal */}
+      <AnimatePresence>
+        {rejectTarget && (
+          <RejectionModal
+            onConfirm={handleRejectConfirm}
+            onCancel={() => setRejectTarget(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

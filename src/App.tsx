@@ -7,6 +7,7 @@ import SupervisorDashboard from './pages/SupervisorDashboard';
 import Settings from './pages/Settings';
 import Analytics from './pages/Analytics';
 import MyCaptures from './pages/MyCaptures';
+import SupervisorCapture from './features/supervisor/SupervisorCapture';
 import Chatbot from './components/Chatbot';
 import { Toaster } from 'sonner';
 
@@ -78,6 +79,15 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Analytics />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/supervisor-capture"
+            element={
+              <ProtectedRoute allowedRoles={['supervisor']}>
+                <SupervisorCapture />
               </ProtectedRoute>
             }
           />
