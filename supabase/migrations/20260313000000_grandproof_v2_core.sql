@@ -3,11 +3,13 @@
 --   supabase db push
 -- Compatible with Postgres 15+
 
--- ─── 1. Add evidence integrity column to captures ─────────────────────────────
+-- ─── 1. Add evidence integrity + GPS columns to captures ────────────────────
 
 ALTER TABLE captures
-  ADD COLUMN IF NOT EXISTS evidence_sha256 TEXT,
-  ADD COLUMN IF NOT EXISTS capture_source  TEXT DEFAULT 'worker' CHECK (capture_source IN ('worker', 'supervisor'));
+  ADD COLUMN IF NOT EXISTS evidence_sha256  TEXT,
+  ADD COLUMN IF NOT EXISTS capture_source   TEXT DEFAULT 'worker' CHECK (capture_source IN ('worker', 'supervisor')),
+  ADD COLUMN IF NOT EXISTS gps_accuracy_m   DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS altitude_m       DOUBLE PRECISION;
 
 -- ─── 2. Add rejection reason columns to capture_packages ─────────────────────
 
